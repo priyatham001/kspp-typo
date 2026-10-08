@@ -1,0 +1,37 @@
+{
+  "entities": {
+    "UserProfile": {
+      "collection": "users",
+      "fields": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "email": { "type": "string" },
+        "photoUrl": { "type": "string", "optional": true },
+        "status": { "type": "string" },
+        "role": { "type": "string" },
+        "registrationDate": { "type": "timestamp" },
+        "lastLogin": { "type": "timestamp" }
+      }
+    },
+    "ServiceControl": {
+      "collection": "settings",
+      "fields": {
+        "serviceEnabled": { "type": "boolean" },
+        "disabledMessage": { "type": "string", "optional": true },
+        "updatedBy": { "type": "string" },
+        "updatedAt": { "type": "timestamp" }
+      }
+    },
+    "AuditLog": {
+      "collection": "audit_logs",
+      "fields": {
+        "timestamp": { "type": "timestamp" },
+        "adminId": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "targetUserId": { "type": "string", "optional": true },
+        "result": { "type": "string" }
+      }
+    }
+  }
+}

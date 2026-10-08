@@ -1,0 +1,6 @@
+{
+  "name": "REPLICA",
+  "description": "REPLICA - I replicate keyboard. Server-controlled Bluetooth HID keyboard and auto-typer.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
