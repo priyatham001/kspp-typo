@@ -20,7 +20,6 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const pathname = url.pathname;
 
-  // CORS headers
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -31,7 +30,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Health checks
   if (pathname === '/health' || pathname === '/api/health') {
     const apkPath = getApkPath();
     const stats = apkPath ? fs.statSync(apkPath) : null;
@@ -47,7 +45,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // APK Download
   if (pathname === '/download/app-debug.apk' || pathname === '/app-debug.apk') {
     const apkPath = getApkPath();
     if (!apkPath) {
@@ -68,7 +65,6 @@ const server = http.createServer((req, res) => {
     return;
   }
 
-  // Sphere Image Asset
   if (pathname === '/replica_sphere.jpg' || pathname === '/public/replica_sphere.jpg') {
     const imgPath = path.join(__dirname, 'public/replica_sphere.jpg');
     const fallbackPath = path.join(__dirname, 'app/src/main/res/drawable/replica_sphere.jpg');
@@ -81,10 +77,9 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  // Serve Main Web Page
   if (pathname === '/' || pathname === '/index.html') {
     const apkPath = getApkPath();
-    let apkSizeMb = '0';
+    let apkSizeMb = '76.2';
     if (apkPath) {
       try {
         const stats = fs.statSync(apkPath);
@@ -307,7 +302,7 @@ const server = http.createServer((req, res) => {
 
     textarea {
       width: 100%;
-      height: 90px;
+      height: 80px;
       background: #0b0f19;
       border: 1px solid var(--card-border);
       border-radius: 8px;
