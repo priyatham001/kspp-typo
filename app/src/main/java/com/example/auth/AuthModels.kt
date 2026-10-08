@@ -9,7 +9,10 @@ data class UserProfile(
     val role: String = ROLE_USER,
     val registrationDate: Long = System.currentTimeMillis(),
     val lastLogin: Long = System.currentTimeMillis(),
-    val accessExpiresAt: Long = 0L
+    val accessExpiresAt: Long = 0L,
+    val adminComment: String? = null,
+    val adminCommentBy: String? = null,
+    val adminCommentAt: Long = 0L
 ) {
     companion object {
         const val STATUS_PENDING = "PENDING"
@@ -50,10 +53,33 @@ data class UserProfile(
 
 data class ServiceControl(
     val serviceEnabled: Boolean = true,
-    val disabledMessage: String = "REPLICA service is temporarily unavailable.",
+    val maintenanceMode: Boolean = false,
+    val disabledMessage: String = "REPLICA service is currently unavailable. Please contact an administrator or try again later.",
+    val maintenanceMessage: String = "REPLICA is currently under maintenance. Please try again later.",
     val updatedBy: String = "",
     val updatedAt: Long = System.currentTimeMillis()
-)
+) {
+    val isOperational: Boolean get() = serviceEnabled && !maintenanceMode
+    val isUnavailable: Boolean get() = !isOperational
+
+    val currentMode: String get() = when {
+        !serviceEnabled -> "DISABLED"
+        maintenanceMode -> "MAINTENANCE"
+        else -> "ACTIVE"
+    }
+
+    val effectiveMessage: String get() = when {
+        maintenanceMode -> maintenanceMessage
+        !serviceEnabled -> disabledMessage
+        else -> "REPLICA service is operational."
+    }
+
+    val statusLabel: String get() = when {
+        !serviceEnabled -> "SERVICE DISABLED"
+        maintenanceMode -> "MAINTENANCE MODE"
+        else -> "SERVICE ACTIVE"
+    }
+}
 
 data class AuditLog(
     val id: String = "",

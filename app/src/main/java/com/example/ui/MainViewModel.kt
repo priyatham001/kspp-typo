@@ -144,13 +144,13 @@ public class Main {
         // 2. Monitor real-time global service status
         viewModelScope.launch {
             serviceControl.collect { sc ->
-                if (!sc.serviceEnabled) {
+                if (!sc.isOperational) {
                     val profile = userProfile.value
                     if (profile?.isSuperAdmin != true) {
                         if (typingEngine.typingState.value is TypingState.Typing ||
                             typingEngine.typingState.value is TypingState.Paused) {
                             typingEngine.stopTyping()
-                            _userMessage.value = "REPLICA service was disabled by administrator."
+                            _userMessage.value = if (sc.maintenanceMode) sc.maintenanceMessage else sc.disabledMessage
                         }
                     }
                 }
@@ -212,8 +212,17 @@ public class Main {
     }
 
     fun signOut(context: Context? = null) {
-        typingEngine.stopTyping()
-        hidManager.disconnectDevice()
+        try {
+            typingEngine.stopTyping()
+        } catch (_: Exception) {}
+
+        // Clear user session temporary state cleanly
+        _userMessage.value = null
+        _currentScriptId.value = null
+        _editorText.value = defaultSampleText
+        _editorTitle.value = "greeting.txt"
+        _isSigningIn.value = false
+
         authRepository.signOut(context)
     }
 
@@ -246,8 +255,8 @@ public class Main {
         }
 
         val sc = serviceControl.value
-        if (!sc.serviceEnabled && !profile.isSuperAdmin) {
-            _userMessage.value = sc.disabledMessage
+        if (!sc.isOperational && !profile.isSuperAdmin) {
+            _userMessage.value = if (sc.maintenanceMode) sc.maintenanceMessage else sc.disabledMessage
             return
         }
 
@@ -421,6 +430,16 @@ public class Main {
         } else {
             "Failed to change service status."
         }
+    }
+
+    suspend fun adminSetServiceMode(mode: String, adminId: String, adminEmail: String, customMsg: String? = null) {
+        val res = adminRepository.setServiceMode(mode, adminId, adminEmail, customMsg)
+        _userMessage.value = if (res.isSuccess) "Service status changed to $mode." else "Failed to update service mode."
+    }
+
+    suspend fun adminUpdateUserComment(userId: String, comment: String, adminId: String, adminEmail: String) {
+        val res = adminRepository.updateUserComment(userId, comment, adminId, adminEmail)
+        _userMessage.value = if (res.isSuccess) "Admin comment saved." else "Failed to save admin comment."
     }
 
     suspend fun adminExtendAccess(userId: String, hours: Int = 8, adminId: String, adminEmail: String) {

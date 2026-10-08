@@ -154,6 +154,22 @@ fun SettingsScreen(
                         }
                     }
 
+                    if (!profile.adminComment.isNullOrBlank()) {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = "Admin Note: \"${profile.adminComment}\"",
+                                modifier = Modifier.padding(10.dp),
+                                fontSize = 12.sp,
+                                fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -205,7 +221,7 @@ fun SettingsScreen(
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Bluetooth HID Status",
+                            text = "Bluetooth Devices",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -222,37 +238,76 @@ fun SettingsScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Status row
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    val (statusText, statusColor) = when (connectionState) {
-                        is HidConnectionState.Connected -> "🟢 Connected to ${(connectionState as HidConnectionState.Connected).deviceName}" to StatusGreen
-                        is HidConnectionState.Connecting -> "🟡 Connecting..." to StatusYellow
-                        is HidConnectionState.Disconnected -> "🔴 Disconnected" to StatusRed
-                        is HidConnectionState.BluetoothDisabled -> "Bluetooth Disabled" to StatusRed
-                        is HidConnectionState.PermissionRequired -> "Permission Required" to StatusYellow
-                        is HidConnectionState.NotSupported -> "HID Not Supported on Device" to StatusRed
-                        is HidConnectionState.Registering -> "Registering HID Profile..." to MaterialTheme.colorScheme.primary
-                        is HidConnectionState.Unavailable -> "Bluetooth Hardware Unavailable" to StatusRed
-                        is HidConnectionState.Error -> "Connection Error" to StatusRed
-                    }
-
-                    Text(
-                        text = statusText,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = statusColor
-                    )
-                }
-
+                // Connection state indicator according to spec
                 if (connectionState is HidConnectionState.Connected) {
+                    val conn = connectionState as HidConnectionState.Connected
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = StatusGreen.copy(alpha = 0.12f)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(StatusGreen)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Connected",
+                                    fontWeight = FontWeight.Bold,
+                                    color = StatusGreen,
+                                    fontSize = 15.sp
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = conn.deviceName,
+                                fontWeight = FontWeight.ExtraBold,
+                                fontSize = 16.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
                     Spacer(modifier = Modifier.height(10.dp))
-                    Button(
+                    OutlinedButton(
                         onClick = { viewModel.disconnectDevice() },
-                        colors = ButtonDefaults.buttonColors(containerColor = StatusRed),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text("DISCONNECT FROM CURRENT LAPTOP")
+                        Text("DISCONNECT CURRENT DEVICE")
+                    }
+                } else {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(14.dp)) {
+                            Text(
+                                text = "No Bluetooth device connected",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Button(
+                                onClick = {
+                                    viewModel.refreshBluetooth()
+                                    val firstPaired = pairedDevices.firstOrNull()
+                                    if (firstPaired != null) {
+                                        viewModel.connectDevice(firstPaired)
+                                    }
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Connect Device", fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
 
@@ -260,7 +315,7 @@ fun SettingsScreen(
 
                 // Paired Devices Subheading
                 Text(
-                    text = "Paired Devices",
+                    text = "Available Devices",
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant

@@ -74,7 +74,7 @@ class BluetoothHidManager(private val context: Context) {
                     _connectedDevice.value = pluggedDevice
                     _connectionState.value = HidConnectionState.Connected(pluggedDevice, name)
                 } else {
-                    _connectionState.value = HidConnectionState.Disconnected
+                    autoDetectConnectedDevice()
                 }
             } else {
                 _connectionState.value = HidConnectionState.NotSupported("HID App registration failed or unregistered.")
@@ -155,6 +155,7 @@ class BluetoothHidManager(private val context: Context) {
                 Log.d(tag, "HID_DEVICE profile proxy connected")
                 hidDevice = proxy as? BluetoothHidDevice
                 registerHidApp()
+                autoDetectConnectedDevice()
             }
         }
 
@@ -227,6 +228,7 @@ class BluetoothHidManager(private val context: Context) {
         }
 
         updatePairedDevices()
+        autoDetectConnectedDevice()
 
         if (hidDevice == null) {
             _connectionState.value = HidConnectionState.Registering
@@ -245,6 +247,29 @@ class BluetoothHidManager(private val context: Context) {
             }
         } else if (!isAppRegistered) {
             registerHidApp()
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun autoDetectConnectedDevice() {
+        if (!hasBluetoothPermissions()) return
+        val dev = hidDevice ?: return
+        try {
+            val connectedList = dev.connectedDevices
+            val alreadyConnected = connectedList.firstOrNull() ?:
+                dev.getDevicesMatchingConnectionStates(intArrayOf(BluetoothProfile.STATE_CONNECTED)).firstOrNull()
+            if (alreadyConnected != null) {
+                val devName = getSafeDeviceName(alreadyConnected)
+                Log.d(tag, "Auto-detected already connected device: $devName (${alreadyConnected.address})")
+                _connectedDevice.value = alreadyConnected
+                _connectionState.value = HidConnectionState.Connected(alreadyConnected, devName)
+                return
+            }
+            if (_connectedDevice.value == null && _connectionState.value !is HidConnectionState.Connecting) {
+                _connectionState.value = HidConnectionState.Disconnected
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Notice checking connected devices", e)
         }
     }
 

@@ -8,9 +8,12 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.ListenerRegistration
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
 private const val TAG = "AuthRepository"
@@ -148,13 +151,15 @@ class AuthRepository(
 
             val updates = mutableMapOf<String, Any>(
                 "lastLogin" to now,
-                "displayName" to (user.displayName ?: snapshot.getString("displayName") ?: "User"),
-                "accessExpiresAt" to finalExpiresAt
+                "displayName" to (user.displayName ?: snapshot.getString("displayName") ?: "User")
             )
             user.photoUrl?.let { updates["photoUrl"] = it.toString() }
             if (isOwnerEmail) {
                 updates["role"] = finalRole
                 updates["status"] = finalStatus
+                updates["accessExpiresAt"] = 0L
+            } else if (snapshot.getLong("accessExpiresAt") == null) {
+                updates["accessExpiresAt"] = finalExpiresAt
             }
 
             userDocRef.update(updates).await()
@@ -168,7 +173,10 @@ class AuthRepository(
                 role = finalRole,
                 registrationDate = snapshot.getLong("registrationDate") ?: now,
                 lastLogin = now,
-                accessExpiresAt = finalExpiresAt
+                accessExpiresAt = finalExpiresAt,
+                adminComment = snapshot.getString("adminComment"),
+                adminCommentBy = snapshot.getString("adminCommentBy"),
+                adminCommentAt = snapshot.getLong("adminCommentAt") ?: 0L
             )
             _currentProfile.value = existingProfile
             existingProfile
@@ -194,7 +202,10 @@ class AuthRepository(
                         role = snapshot.getString("role") ?: UserProfile.ROLE_USER,
                         registrationDate = snapshot.getLong("registrationDate") ?: System.currentTimeMillis(),
                         lastLogin = snapshot.getLong("lastLogin") ?: System.currentTimeMillis(),
-                        accessExpiresAt = snapshot.getLong("accessExpiresAt") ?: 0L
+                        accessExpiresAt = snapshot.getLong("accessExpiresAt") ?: 0L,
+                        adminComment = snapshot.getString("adminComment"),
+                        adminCommentBy = snapshot.getString("adminCommentBy"),
+                        adminCommentAt = snapshot.getLong("adminCommentAt") ?: 0L
                     )
                     _currentProfile.value = profile
                 }
@@ -213,13 +224,17 @@ class AuthRepository(
 
                     if (snapshot != null && snapshot.exists()) {
                         val enabled = snapshot.getBoolean("serviceEnabled") ?: true
-                        val message = snapshot.getString("disabledMessage") ?: "REPLICA service is temporarily unavailable."
+                        val maintenance = snapshot.getBoolean("maintenanceMode") ?: false
+                        val message = snapshot.getString("disabledMessage") ?: "REPLICA service is currently unavailable. Please contact an administrator or try again later."
+                        val maintMsg = snapshot.getString("maintenanceMessage") ?: "REPLICA is currently under maintenance. Please try again later."
                         val updatedBy = snapshot.getString("updatedBy") ?: ""
                         val updatedAt = snapshot.getLong("updatedAt") ?: System.currentTimeMillis()
 
                         _serviceControl.value = ServiceControl(
                             serviceEnabled = enabled,
+                            maintenanceMode = maintenance,
                             disabledMessage = message,
+                            maintenanceMessage = maintMsg,
                             updatedBy = updatedBy,
                             updatedAt = updatedAt
                         )
@@ -249,27 +264,35 @@ class AuthRepository(
     }
 
     fun signOut(context: Context? = null) {
-        profileListener?.remove()
+        // 1. Cleanly tear down listeners first to prevent PERMISSION_DENIED callbacks
+        try {
+            profileListener?.remove()
+        } catch (_: Exception) {}
         profileListener = null
+
         _currentProfile.value = null
+        _currentUserFlow.value = null
+
+        // 2. Clear Firebase Auth session safely
         try {
             auth.signOut()
         } catch (e: Exception) {
             Log.w(TAG, "Error in auth.signOut", e)
         }
-        _currentUserFlow.value = null
+
+        // 3. Clear Google Credentials state safely
         if (context != null) {
             try {
                 val credentialManager = androidx.credentials.CredentialManager.create(context)
-                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                CoroutineScope(Dispatchers.IO).launch {
                     try {
                         credentialManager.clearCredentialState(androidx.credentials.ClearCredentialStateRequest())
                     } catch (e: Exception) {
-                        Log.w(TAG, "Error clearing credential state: ${e.message}")
+                        Log.d(TAG, "Clear credential state notice: ${e.message}")
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "CredentialManager error: ${e.message}")
+                Log.d(TAG, "CredentialManager notice: ${e.message}")
             }
         }
     }

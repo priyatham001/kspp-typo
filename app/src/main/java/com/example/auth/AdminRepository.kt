@@ -43,7 +43,10 @@ class AdminRepository(
                             role = doc.getString("role") ?: UserProfile.ROLE_USER,
                             registrationDate = doc.getLong("registrationDate") ?: 0L,
                             lastLogin = doc.getLong("lastLogin") ?: 0L,
-                            accessExpiresAt = doc.getLong("accessExpiresAt") ?: 0L
+                            accessExpiresAt = doc.getLong("accessExpiresAt") ?: 0L,
+                            adminComment = doc.getString("adminComment"),
+                            adminCommentBy = doc.getString("adminCommentBy"),
+                            adminCommentAt = doc.getLong("adminCommentAt") ?: 0L
                         )
                     }
                     trySend(users)
@@ -255,16 +258,59 @@ class AdminRepository(
         }
     }
 
-    suspend fun setGlobalServiceStatus(
-        enabled: Boolean,
+    suspend fun updateUserComment(userId: String, comment: String, adminId: String, adminEmail: String): Result<Unit> {
+        val now = System.currentTimeMillis()
+        return try {
+            firestore.collection("users").document(userId)
+                .update(
+                    mapOf(
+                        "adminComment" to comment.trim(),
+                        "adminCommentBy" to adminEmail,
+                        "adminCommentAt" to now
+                    )
+                ).await()
+
+            recordAuditLog(
+                AuditLog(
+                    timestamp = now,
+                    adminId = adminId,
+                    adminEmail = adminEmail,
+                    action = "ADMIN_COMMENT_UPDATED",
+                    targetUserId = userId,
+                    result = "SUCCESS"
+                )
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to update admin comment", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun setServiceMode(
+        mode: String, // "ACTIVE", "MAINTENANCE", "DISABLED"
         adminId: String,
         adminEmail: String,
-        message: String = "REPLICA service is temporarily unavailable."
+        customMessage: String? = null
     ): Result<Unit> {
+        val (enabled, maintenance) = when (mode.uppercase()) {
+            "MAINTENANCE" -> true to true
+            "DISABLED" -> false to false
+            else -> true to false // ACTIVE
+        }
+
+        val defaultMsg = when (mode.uppercase()) {
+            "MAINTENANCE" -> "REPLICA is currently under maintenance. Please try again later."
+            "DISABLED" -> "REPLICA service is currently unavailable. Please contact an administrator or try again later."
+            else -> "REPLICA service is operational."
+        }
+
         return try {
             val data = mapOf(
                 "serviceEnabled" to enabled,
-                "disabledMessage" to message,
+                "maintenanceMode" to maintenance,
+                "disabledMessage" to (if (!enabled) (customMessage ?: defaultMsg) else "REPLICA service is currently unavailable."),
+                "maintenanceMessage" to (if (maintenance) (customMessage ?: defaultMsg) else "REPLICA is currently under maintenance. Please try again later."),
                 "updatedBy" to adminEmail,
                 "updatedAt" to System.currentTimeMillis()
             )
@@ -278,16 +324,25 @@ class AdminRepository(
                     timestamp = System.currentTimeMillis(),
                     adminId = adminId,
                     adminEmail = adminEmail,
-                    action = if (enabled) "SERVICE_ENABLED" else "SERVICE_DISABLED",
+                    action = "SERVICE_STATUS_CHANGED_$mode",
                     targetUserId = null,
                     result = "SUCCESS"
                 )
             )
             Result.success(Unit)
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to set global service status", e)
+            Log.e(TAG, "Failed to set service mode", e)
             Result.failure(e)
         }
+    }
+
+    suspend fun setGlobalServiceStatus(
+        enabled: Boolean,
+        adminId: String,
+        adminEmail: String,
+        message: String = "REPLICA service is temporarily unavailable."
+    ): Result<Unit> {
+        return setServiceMode(if (enabled) "ACTIVE" else "DISABLED", adminId, adminEmail, message)
     }
 
     private suspend fun recordAuditLog(log: AuditLog) {

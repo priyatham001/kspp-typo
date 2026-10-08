@@ -35,7 +35,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -61,37 +63,43 @@ fun LoginScreen(
     errorMessage: String?,
     modifier: Modifier = Modifier
 ) {
-    // 1. Continuous Optical Illusion Animations
-    val infiniteTransition = rememberInfiniteTransition(label = "sphere_illusion_anim")
+    // 1. Initial Opening Entry Animation (smooth subtle scale & fade on open)
+    val entryAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
+    val entryScale = remember { androidx.compose.animation.core.Animatable(0.8f) }
 
-    // Slow 360-degree orbital rotation
-    val rotationAngle by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 24000, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "rotation"
-    )
+    LaunchedEffect(Unit) {
+        entryAlpha.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing)
+        )
+    }
+    LaunchedEffect(Unit) {
+        entryScale.animateTo(
+            targetValue = 1f,
+            animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing)
+        )
+    }
+
+    // 2. Continuous Optical Illusion & Floating Oscillation
+    val infiniteTransition = rememberInfiniteTransition(label = "sphere_illusion_anim")
 
     // Gentle 3D floating / hovering oscillation
     val floatOffset by infiniteTransition.animateFloat(
-        initialValue = -10f,
-        targetValue = 10f,
+        initialValue = -6f,
+        targetValue = 6f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 3200, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 2800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "floating"
     )
 
-    // Pulsing scale illusion
+    // Gentle pulsing scale
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.96f,
-        targetValue = 1.05f,
+        initialValue = 0.98f,
+        targetValue = 1.03f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2600, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "pulse_scale"
@@ -99,10 +107,10 @@ fun LoginScreen(
 
     // Glow aura alpha
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.25f,
-        targetValue = 0.75f,
+        initialValue = 0.3f,
+        targetValue = 0.7f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "glow_alpha"
@@ -128,11 +136,16 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // ANIMATED SPHERE ILLUSION HERO
+                // ANIMATED SPHERE HERO
                 Box(
                     modifier = Modifier
                         .size(160.dp)
-                        .offset(y = floatOffset.dp),
+                        .offset(y = floatOffset.dp)
+                        .graphicsLayer {
+                            alpha = entryAlpha.value
+                            scaleX = entryScale.value * pulseScale
+                            scaleY = entryScale.value * pulseScale
+                        },
                     contentAlignment = Alignment.Center
                 ) {
                     // Outer glowing holographic aura ring
@@ -140,15 +153,15 @@ fun LoginScreen(
                         modifier = Modifier
                             .size(156.dp)
                             .graphicsLayer {
-                                scaleX = pulseScale * 1.08f
-                                scaleY = pulseScale * 1.08f
+                                scaleX = 1.06f
+                                scaleY = 1.06f
                                 alpha = glowAlpha
                             }
                             .clip(CircleShape)
                             .background(
                                 Brush.radialGradient(
                                     colors = listOf(
-                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.6f),
+                                        MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
                                         MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f),
                                         Color.Transparent
                                     )
@@ -156,18 +169,13 @@ fun LoginScreen(
                             )
                     )
 
-                    // The Sphere Image with 3D Rotation and Scale Illusion
+                    // The Supplied Sphere Image kept recognizable & crisp
                     Image(
                         painter = painterResource(id = R.drawable.replica_sphere),
-                        contentDescription = "REPLICA Illusion Sphere",
+                        contentDescription = "replica_kspp Sphere Icon",
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .size(136.dp)
-                            .graphicsLayer {
-                                rotationZ = rotationAngle
-                                scaleX = pulseScale
-                                scaleY = pulseScale
-                            }
                             .clip(CircleShape)
                             .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape)
                             .shadow(16.dp, CircleShape)
@@ -176,10 +184,10 @@ fun LoginScreen(
 
                 // App Name
                 Text(
-                    text = "REPLICA",
+                    text = "replica_kspp",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
-                    letterSpacing = 3.sp,
+                    letterSpacing = 2.sp,
                     color = MaterialTheme.colorScheme.onSurface
                 )
 

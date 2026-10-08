@@ -44,7 +44,7 @@ import com.example.ui.theme.StatusRed
 import com.example.ui.theme.StatusYellow
 
 enum class AccessDeniedReason {
-    PENDING, REJECTED, SUSPENDED, TERMINATED, SERVICE_DISABLED, NETWORK_ERROR, ACCESS_EXPIRED
+    PENDING, REJECTED, SUSPENDED, TERMINATED, SERVICE_DISABLED, MAINTENANCE, NETWORK_ERROR, ACCESS_EXPIRED
 }
 
 @Composable
@@ -60,8 +60,8 @@ fun StatusAccessScreen(
     val (icon, title, message, color) = when (reason) {
         AccessDeniedReason.ACCESS_EXPIRED -> Quadruple(
             Icons.Default.HourglassTop,
-            "8-Hour Access Expired",
-            "Your 8-hour access period has ended. Please request administrator (nani68629@gmail.com) to continue or extend your REPLICA access.",
+            "TRIAL EXPIRED",
+            "ADMIN APPROVAL REQUIRED\n\nYour 8-hour free trial access has expired. Please contact administrator (nani68629@gmail.com) to grant continued access.",
             StatusYellow
         )
         AccessDeniedReason.PENDING -> Quadruple(
@@ -88,10 +88,16 @@ fun StatusAccessScreen(
             "Your REPLICA access has been terminated by administrator (nani68629@gmail.com). All protected services and local data have been terminated.",
             ErrorRed
         )
+        AccessDeniedReason.MAINTENANCE -> Quadruple(
+            Icons.Default.Warning,
+            "REPLICA Under Maintenance",
+            serviceMessage ?: "REPLICA is currently under maintenance. Please try again later.",
+            StatusYellow
+        )
         AccessDeniedReason.SERVICE_DISABLED -> Quadruple(
             Icons.Default.Warning,
             "Service Unavailable",
-            serviceMessage ?: "REPLICA service is temporarily unavailable.",
+            serviceMessage ?: "REPLICA service is currently unavailable. Please contact an administrator or try again later.",
             StatusYellow
         )
         AccessDeniedReason.NETWORK_ERROR -> Quadruple(
@@ -163,6 +169,10 @@ fun StatusAccessScreen(
                             Text("Account: ${it.displayName}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                             Text("Email: ${it.email}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("Status: ${it.status}", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = color)
+                            if (!it.adminComment.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text("Admin Note: \"${it.adminComment}\"", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.primary)
+                            }
                         }
                     }
                 }
@@ -174,7 +184,8 @@ fun StatusAccessScreen(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    if (reason == AccessDeniedReason.SERVICE_DISABLED && userProfile?.isSuperAdmin == true && onOpenAdminDashboard != null) {
+                    if ((reason == AccessDeniedReason.SERVICE_DISABLED || reason == AccessDeniedReason.MAINTENANCE) &&
+                        userProfile?.isAdmin == true && onOpenAdminDashboard != null) {
                         Button(
                             onClick = onOpenAdminDashboard,
                             modifier = Modifier.fillMaxWidth(),

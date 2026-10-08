@@ -224,6 +224,16 @@ class MainActivity : ComponentActivity() {
                                 onSignOut = { viewModel.signOut(this@MainActivity) }
                             )
                         }
+                        serviceControl.maintenanceMode && !profile.isSuperAdmin -> {
+                            StatusAccessScreen(
+                                reason = AccessDeniedReason.MAINTENANCE,
+                                userProfile = profile,
+                                serviceMessage = serviceControl.maintenanceMessage,
+                                onRefresh = { viewModel.refreshAuthStatus() },
+                                onSignOut = { viewModel.signOut(this@MainActivity) },
+                                onOpenAdminDashboard = if (profile.isAdmin) { { currentTab = ScreenTab.ADMIN } } else null
+                            )
+                        }
                         !serviceControl.serviceEnabled && !profile.isSuperAdmin -> {
                             StatusAccessScreen(
                                 reason = AccessDeniedReason.SERVICE_DISABLED,
@@ -255,7 +265,7 @@ class MainActivity : ComponentActivity() {
                                         title = {
                                             Column {
                                                 Text(
-                                                    text = "REPLICA",
+                                                    text = "replica_kspp",
                                                     fontWeight = FontWeight.ExtraBold,
                                                     letterSpacing = 1.sp,
                                                     fontSize = 20.sp,

@@ -94,7 +94,7 @@ fun HomeScreen(
     var saveNameInput by remember(editorTitle) { mutableStateOf(editorTitle) }
 
     val scrollState = rememberScrollState()
-    val isApproved = userProfile?.hasActiveAccess == true && serviceControl.serviceEnabled
+    val isApproved = userProfile?.hasActiveAccess == true && serviceControl.isOperational
 
     Column(
         modifier = modifier
@@ -112,7 +112,7 @@ fun HomeScreen(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "REPLICA",
+                    text = "replica_kspp",
                     style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.ExtraBold,
                     color = MaterialTheme.colorScheme.primary,
@@ -133,6 +133,15 @@ fun HomeScreen(
                         fontWeight = FontWeight.Bold,
                         color = if (it.isAccessExpired) ErrorRed else StatusGreen
                     )
+                    if (!it.adminComment.isNullOrBlank()) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            text = "Admin Note: \"${it.adminComment}\"",
+                            fontSize = 11.sp,
+                            fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
@@ -160,8 +169,9 @@ fun HomeScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
                         text = when {
-                            !serviceControl.serviceEnabled -> "REPLICA is temporarily disabled by Super Admin."
-                            userProfile?.isAccessExpired == true -> "8-hour access expired. Waiting for admin nani68629@gmail.com to continue."
+                            serviceControl.maintenanceMode -> serviceControl.maintenanceMessage
+                            !serviceControl.serviceEnabled -> serviceControl.disabledMessage
+                            userProfile?.isAccessExpired == true -> "TRIAL EXPIRED — ADMIN APPROVAL REQUIRED. Contact admin nani68629@gmail.com to continue."
                             else -> "Account Status: ${userProfile?.status ?: "Pending"}. Administrator approval required before Auto-Typing is unlocked."
                         },
                         style = MaterialTheme.typography.bodySmall,

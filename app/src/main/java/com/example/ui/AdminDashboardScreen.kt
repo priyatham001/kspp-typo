@@ -22,7 +22,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Comment
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.People
@@ -40,6 +42,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Tab
@@ -91,7 +94,9 @@ fun AdminDashboardScreen(
 
     // Dialog state holders
     var targetUserForAction by remember { mutableStateOf<Pair<UserProfile, String>?>(null) }
-    var showToggleServiceDialog by remember { mutableStateOf(false) }
+    var userForComment by remember { mutableStateOf<UserProfile?>(null) }
+    var commentTextInput by remember { mutableStateOf("") }
+    var requestedServiceMode by remember { mutableStateOf<String?>(null) }
 
     val adminId = currentProfile?.userId ?: ""
     val adminEmail = currentProfile?.email ?: "nani68629@gmail.com"
@@ -177,17 +182,114 @@ fun AdminDashboardScreen(
                         onSuspend = { targetUserForAction = it to "SUSPEND" },
                         onRestore = { targetUserForAction = it to "RESTORE" },
                         onTerminate = { targetUserForAction = it to "TERMINATE" },
-                        onDelete = { targetUserForAction = it to "DELETE" }
+                        onDelete = { targetUserForAction = it to "DELETE" },
+                        onComment = {
+                            userForComment = it
+                            commentTextInput = it.adminComment ?: ""
+                        }
                     )
                     3 -> ServiceControlTab(
                         serviceControl = serviceControl,
                         isSuperAdmin = isSuperAdmin,
-                        onToggleClick = { showToggleServiceDialog = true }
+                        onSelectMode = { requestedServiceMode = it }
                     )
                     4 -> AuditLogsTab(auditLogs = auditLogs)
                 }
             }
         }
+    }
+
+    // Dialog for Admin Comment
+    userForComment?.let { target ->
+        AlertDialog(
+            onDismissRequest = { userForComment = null },
+            title = { Text("Admin Comment / Note") },
+            text = {
+                Column {
+                    Text(
+                        "User: ${target.displayName} (${target.email})",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    OutlinedTextField(
+                        value = commentTextInput,
+                        onValueChange = { commentTextInput = it },
+                        label = { Text("Comment / Note") },
+                        placeholder = { Text("Access approved for project testing until further notice.") },
+                        modifier = Modifier.fillMaxWidth(),
+                        maxLines = 4
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            viewModel.adminUpdateUserComment(target.userId, commentTextInput, adminId, adminEmail)
+                        }
+                        userForComment = null
+                    }
+                ) {
+                    Text("SAVE NOTE")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { userForComment = null }) {
+                    Text("CANCEL")
+                }
+            }
+        )
+    }
+
+    // Dialog for Service Mode Change
+    requestedServiceMode?.let { mode ->
+        val isDestructive = mode == "DISABLED"
+        AlertDialog(
+            onDismissRequest = { requestedServiceMode = null },
+            title = {
+                Text(
+                    when (mode) {
+                        "ACTIVE" -> "Set Service: ACTIVE"
+                        "MAINTENANCE" -> "Set Service: MAINTENANCE MODE"
+                        else -> "Set Service: DISABLED"
+                    }
+                )
+            },
+            text = {
+                Text(
+                    when (mode) {
+                        "ACTIVE" -> "Restore normal application operation for all approved users?"
+                        "MAINTENANCE" -> "Place REPLICA under maintenance? Normal users will see \"REPLICA is currently under maintenance. Please try again later.\" while admin panel remains accessible."
+                        else -> "Stop/disable REPLICA globally? Normal users will see \"REPLICA service is currently unavailable.\" Active sessions will be stopped."
+                    }
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            viewModel.adminSetServiceMode(mode, adminId, adminEmail)
+                        }
+                        requestedServiceMode = null
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = when (mode) {
+                            "ACTIVE" -> StatusGreen
+                            "MAINTENANCE" -> StatusYellow
+                            else -> ErrorRed
+                        }
+                    )
+                ) {
+                    Text("CONFIRM: $mode", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { requestedServiceMode = null }) {
+                    Text("CANCEL")
+                }
+            }
+        )
     }
 
     // Confirmation dialog for User Actions
@@ -260,46 +362,6 @@ fun AdminDashboardScreen(
             },
             dismissButton = {
                 TextButton(onClick = { targetUserForAction = null }) {
-                    Text("CANCEL")
-                }
-            }
-        )
-    }
-
-    // Confirmation dialog for Service Enable/Disable
-    if (showToggleServiceDialog) {
-        val willDisable = serviceControl.serviceEnabled
-        AlertDialog(
-            onDismissRequest = { showToggleServiceDialog = false },
-            title = {
-                Text(if (willDisable) "Disable REPLICA Globally?" else "Enable REPLICA Globally?")
-            },
-            text = {
-                Text(
-                    if (willDisable) {
-                        "Are you sure you want to disable REPLICA for all users? All active typing sessions will stop immediately and users will see service unavailable."
-                    } else {
-                        "Enable REPLICA service for all approved users?"
-                    }
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        scope.launch {
-                            viewModel.adminToggleService(!serviceControl.serviceEnabled, adminId, adminEmail)
-                        }
-                        showToggleServiceDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (willDisable) ErrorRed else StatusGreen
-                    )
-                ) {
-                    Text(if (willDisable) "DISABLE SERVICE" else "ENABLE SERVICE", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showToggleServiceDialog = false }) {
                     Text("CANCEL")
                 }
             }
@@ -431,7 +493,8 @@ fun AllUsersManagementTab(
     onSuspend: (UserProfile) -> Unit,
     onRestore: (UserProfile) -> Unit,
     onTerminate: (UserProfile) -> Unit,
-    onDelete: (UserProfile) -> Unit
+    onDelete: (UserProfile) -> Unit,
+    onComment: (UserProfile) -> Unit
 ) {
     var filterStatus by remember { mutableStateOf("ALL") }
 
@@ -464,6 +527,15 @@ fun AllUsersManagementTab(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.End
                             ) {
+                                OutlinedButton(
+                                    onClick = { onComment(user) },
+                                    modifier = Modifier.padding(end = 6.dp)
+                                ) {
+                                    Icon(Icons.Default.Comment, contentDescription = null, modifier = Modifier.size(13.dp))
+                                    Spacer(modifier = Modifier.width(4.dp))
+                                    Text(if (user.adminComment.isNullOrBlank()) "ADD NOTE" else "EDIT NOTE", fontSize = 11.sp)
+                                }
+
                                 if (user.status == UserProfile.STATUS_APPROVED && !user.isAdmin) {
                                     Button(
                                         onClick = { onExtend(user) },
@@ -634,6 +706,48 @@ fun UserCard(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            if (!user.adminComment.isNullOrBlank()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f))
+                        .padding(10.dp)
+                ) {
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Default.Comment,
+                                contentDescription = null,
+                                modifier = Modifier.size(12.dp),
+                                tint = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                "Admin Note:",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(2.dp))
+                        Text(
+                            user.adminComment,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                        if (!user.adminCommentBy.isNullOrBlank()) {
+                            Text(
+                                "Added by ${user.adminCommentBy}",
+                                fontSize = 10.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(10.dp))
 
             actions()
@@ -645,7 +759,7 @@ fun UserCard(
 fun ServiceControlTab(
     serviceControl: com.example.auth.ServiceControl,
     isSuperAdmin: Boolean,
-    onToggleClick: () -> Unit
+    onSelectMode: (String) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -664,39 +778,69 @@ fun ServiceControlTab(
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Current Status: ", fontWeight = FontWeight.Medium)
+                val currentMode = serviceControl.currentMode
                 Text(
-                    if (serviceControl.serviceEnabled) "ENABLED" else "DISABLED",
+                    currentMode,
                     fontWeight = FontWeight.ExtraBold,
-                    color = if (serviceControl.serviceEnabled) StatusGreen else StatusRed
+                    color = when (currentMode) {
+                        "ACTIVE" -> StatusGreen
+                        "MAINTENANCE" -> StatusYellow
+                        else -> StatusRed
+                    }
                 )
             }
 
-            if (!serviceControl.serviceEnabled) {
+            if (serviceControl.isUnavailable) {
                 Text(
-                    "Message shown to users: \"${serviceControl.disabledMessage}\"",
+                    "Message shown to users: \"${serviceControl.effectiveMessage}\"",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
 
             if (isSuperAdmin) {
-                Button(
-                    onClick = onToggleClick,
+                Text("Change Service Status:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+
+                Row(
                     modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (serviceControl.serviceEnabled) ErrorRed else StatusGreen
-                    )
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.PowerSettingsNew, contentDescription = "Toggle")
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        if (serviceControl.serviceEnabled) "DISABLE REPLICA SERVICE" else "ENABLE REPLICA SERVICE",
-                        fontWeight = FontWeight.Bold
-                    )
+                    Button(
+                        onClick = { onSelectMode("ACTIVE") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (serviceControl.currentMode == "ACTIVE") StatusGreen else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (serviceControl.currentMode == "ACTIVE") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("ACTIVE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = { onSelectMode("MAINTENANCE") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (serviceControl.currentMode == "MAINTENANCE") StatusYellow else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (serviceControl.currentMode == "MAINTENANCE") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("MAINTENANCE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    Button(
+                        onClick = { onSelectMode("DISABLED") },
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = if (serviceControl.currentMode == "DISABLED") ErrorRed else MaterialTheme.colorScheme.surfaceVariant,
+                            contentColor = if (serviceControl.currentMode == "DISABLED") MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface
+                        )
+                    ) {
+                        Text("DISABLED", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
             } else {
                 Text(
-                    "Only SUPER_ADMIN can enable or disable the global REPLICA service.",
+                    "Only SUPER_ADMIN can change the global REPLICA service status.",
                     color = ErrorRed,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold

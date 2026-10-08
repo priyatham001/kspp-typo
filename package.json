@@ -1,6 +1,11 @@
 {
   "name": "replica_kspp",
+  "version": "1.0.0",
+  "private": true,
   "description": "replica_kspp - I replicate keyboard. Server-controlled Bluetooth HID keyboard and auto-typer with 8-hour access control.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js",
+    "build": "node -e \"console.log('Build OK')\""
+  }
 }

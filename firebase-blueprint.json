@@ -10,14 +10,20 @@
         "status": { "type": "string" },
         "role": { "type": "string" },
         "registrationDate": { "type": "timestamp" },
-        "lastLogin": { "type": "timestamp" }
+        "lastLogin": { "type": "timestamp" },
+        "accessExpiresAt": { "type": "timestamp", "optional": true },
+        "adminComment": { "type": "string", "optional": true },
+        "adminCommentBy": { "type": "string", "optional": true },
+        "adminCommentAt": { "type": "timestamp", "optional": true }
       }
     },
     "ServiceControl": {
       "collection": "settings",
       "fields": {
         "serviceEnabled": { "type": "boolean" },
+        "maintenanceMode": { "type": "boolean", "optional": true },
         "disabledMessage": { "type": "string", "optional": true },
+        "maintenanceMessage": { "type": "string", "optional": true },
         "updatedBy": { "type": "string" },
         "updatedAt": { "type": "timestamp" }
       }
