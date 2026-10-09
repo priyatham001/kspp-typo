@@ -17,8 +17,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
   const [customName, setCustomName] = useState('');
   const [showCustom, setShowCustom] = useState(false);
 
-  // Optical illusion tilt tracking
+  // Optical illusion tilt & warp state
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [isWarping, setIsWarping] = useState(false);
 
   const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -43,8 +44,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
           <div
             onMouseMove={handleMouseMove}
             onMouseLeave={handleMouseLeave}
-            className="relative w-44 h-44 mb-6 cursor-pointer flex items-center justify-center select-none"
-            title="replica_kspp neural sphere illusion"
+            onClick={() => setIsWarping(prev => !prev)}
+            className="relative w-44 h-44 mb-6 cursor-pointer flex items-center justify-center select-none active:scale-95 transition-transform"
+            title="Click or hover to warp optical illusion"
           >
             {/* Outer pulsating holographic glow aura */}
             <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-cyan-500/30 via-blue-500/20 to-purple-500/30 blur-xl animate-sphere-aura pointer-events-none"></div>
@@ -64,7 +66,9 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
               <img
                 src="/image.png"
                 alt="replica_kspp sphere illusion"
-                className="w-full h-full object-cover animate-sphere-illusion"
+                className={`w-full h-full object-cover animate-sphere-illusion select-none pointer-events-none drop-shadow-[0_0_20px_rgba(6,182,212,0.6)] ${
+                  isWarping ? 'scale-110 brightness-125' : ''
+                } transition-all duration-300`}
                 onError={(e) => {
                   // Fallback if image.png fails
                   (e.target as HTMLImageElement).src = '/replica_sphere.jpg';

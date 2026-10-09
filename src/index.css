@@ -17,50 +17,55 @@
   }
 }
 
-/* Custom Sphere Illusion Animations */
-@keyframes sphere-spin-illusion {
+@keyframes sphere-hypnotic-illusion {
   0% {
-    transform: perspective(600px) rotateY(0deg) rotateX(10deg) scale(0.98);
-    filter: drop-shadow(0 0 15px rgba(6, 182, 212, 0.4)) contrast(1.1);
+    transform: rotate(0deg) scale(0.98);
+    filter: brightness(1.05) contrast(1.25) saturate(1.15) drop-shadow(0 0 16px rgba(6, 182, 212, 0.65));
   }
   25% {
-    transform: perspective(600px) rotateY(90deg) rotateX(-8deg) scale(1.03);
-    filter: drop-shadow(0 0 25px rgba(59, 130, 246, 0.6)) contrast(1.2);
+    transform: rotate(90deg) scale(1.05);
+    filter: brightness(1.22) contrast(1.4) saturate(1.35) hue-rotate(15deg) drop-shadow(0 0 28px rgba(59, 130, 246, 0.85));
   }
   50% {
-    transform: perspective(600px) rotateY(180deg) rotateX(12deg) scale(0.99);
-    filter: drop-shadow(0 0 35px rgba(6, 182, 212, 0.5)) contrast(1.15);
+    transform: rotate(180deg) scale(0.97);
+    filter: brightness(1.08) contrast(1.28) saturate(1.2) hue-rotate(-12deg) drop-shadow(0 0 20px rgba(6, 182, 212, 0.75));
   }
   75% {
-    transform: perspective(600px) rotateY(270deg) rotateX(-10deg) scale(1.04);
-    filter: drop-shadow(0 0 25px rgba(59, 130, 246, 0.7)) contrast(1.25);
+    transform: rotate(270deg) scale(1.06);
+    filter: brightness(1.25) contrast(1.42) saturate(1.4) hue-rotate(22deg) drop-shadow(0 0 32px rgba(139, 92, 246, 0.85));
   }
   100% {
-    transform: perspective(600px) rotateY(360deg) rotateX(10deg) scale(0.98);
-    filter: drop-shadow(0 0 15px rgba(6, 182, 212, 0.4)) contrast(1.1);
+    transform: rotate(360deg) scale(0.98);
+    filter: brightness(1.05) contrast(1.25) saturate(1.15) drop-shadow(0 0 16px rgba(6, 182, 212, 0.65));
+  }
+}
+
+@keyframes sphere-optical-twist {
+  0%, 100% {
+    filter: contrast(1.25) brightness(1.05);
+  }
+  50% {
+    filter: contrast(1.45) brightness(1.2);
   }
 }
 
 @keyframes sphere-float {
-  0% {
+  0%, 100% {
     transform: translateY(-6px);
   }
   50% {
     transform: translateY(6px);
   }
-  100% {
-    transform: translateY(-6px);
-  }
 }
 
 @keyframes aura-pulse {
   0%, 100% {
-    transform: scale(0.92);
+    transform: scale(0.92) rotate(0deg);
     opacity: 0.35;
   }
   50% {
-    transform: scale(1.12);
-    opacity: 0.75;
+    transform: scale(1.14) rotate(180deg);
+    opacity: 0.8;
   }
 }
 
@@ -73,14 +78,40 @@
   }
 }
 
+@keyframes sphere-scanline {
+  0% {
+    transform: translateY(-130%) rotate(25deg);
+    opacity: 0.1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+  100% {
+    transform: translateY(230%) rotate(25deg);
+    opacity: 0.1;
+  }
+}
+
 .animate-sphere-illusion {
-  animation: sphere-spin-illusion 12s linear infinite, sphere-float 3.5s ease-in-out infinite;
+  animation: sphere-hypnotic-illusion 6s linear infinite;
+  transform-origin: center center;
+  will-change: transform, filter;
+  transition: filter 0.3s ease;
+}
+
+.animate-sphere-illusion:hover {
+  animation-duration: 3.5s;
 }
 
 .animate-sphere-aura {
-  animation: aura-pulse 3s ease-in-out infinite;
+  animation: aura-pulse 3.5s ease-in-out infinite;
 }
 
 .animate-radar {
   animation: radar-sweep 8s linear infinite;
 }
+
+.animate-sphere-scan {
+  animation: sphere-scanline 3s ease-in-out infinite;
+}
+
