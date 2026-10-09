@@ -128,7 +128,7 @@ public class Main {
                             typingEngine.stopTyping()
                         }
                         hidManager.disconnectDevice()
-                        _userMessage.value = "8-hour access period expired. Contact admin nani68629@gmail.com to continue."
+                        _userMessage.value = "8-hour access period expired. Contact administrator to continue."
                     } else if (!profile.isApproved) {
                         if (typingEngine.typingState.value is TypingState.Typing ||
                             typingEngine.typingState.value is TypingState.Paused) {
@@ -236,6 +236,10 @@ public class Main {
         _editorText.value = newText
     }
 
+    fun updateEditorTitle(newTitle: String) {
+        _editorTitle.value = newTitle
+    }
+
     fun setTypingDelay(delayMs: Long) {
         typingEngine.setDelay(delayMs)
         settingsManager.setDefaultDelayMs(delayMs)
@@ -246,7 +250,7 @@ public class Main {
         val profile = userProfile.value
         if (profile == null || !profile.hasActiveAccess) {
             val msg = if (profile?.isAccessExpired == true) {
-                "8-hour access expired. Waiting for admin nani68629@gmail.com to continue access."
+                "8-hour access expired. Waiting for administrator to continue access."
             } else {
                 "Access not approved. Status: ${profile?.status ?: "Unauthenticated"}"
             }
@@ -424,9 +428,9 @@ public class Main {
     }
 
     suspend fun adminToggleService(enabled: Boolean, adminId: String, adminEmail: String) {
-        val res = adminRepository.setGlobalServiceStatus(enabled, adminId, adminEmail)
+        val res = adminRepository.setServiceMode(if (enabled) "ACTIVE" else "DISABLED", adminId, adminEmail)
         _userMessage.value = if (res.isSuccess) {
-            if (enabled) "REPLICA service enabled." else "REPLICA service disabled."
+            if (enabled) "replica_kspp service enabled." else "replica_kspp service disabled."
         } else {
             "Failed to change service status."
         }
@@ -447,6 +451,11 @@ public class Main {
         _userMessage.value = if (res.isSuccess) "Access extended by $hours hours." else "Failed to extend access."
     }
 
+    suspend fun adminDecreaseAccess(userId: String, hours: Int = 1, adminId: String, adminEmail: String) {
+        val res = adminRepository.decreaseUserAccess(userId, hours, adminId, adminEmail)
+        _userMessage.value = if (res.isSuccess) "Access decreased by $hours hours." else "Failed to decrease access."
+    }
+
     suspend fun adminGrantPermanentAccess(userId: String, adminId: String, adminEmail: String) {
         val res = adminRepository.grantPermanentAccess(userId, adminId, adminEmail)
         _userMessage.value = if (res.isSuccess) "Permanent access granted." else "Failed to grant permanent access."
@@ -454,7 +463,17 @@ public class Main {
 
     suspend fun adminDeleteUser(userId: String, adminId: String, adminEmail: String) {
         val res = adminRepository.deleteUser(userId, adminId, adminEmail)
-        _userMessage.value = if (res.isSuccess) "User permanently deleted from REPLICA." else "Failed to delete user."
+        _userMessage.value = if (res.isSuccess) "User permanently deleted." else "Failed to delete user."
+    }
+
+    suspend fun adminSendBroadcastMessage(title: String, message: String, adminId: String, adminEmail: String) {
+        val res = adminRepository.sendBroadcastMessage(title, message, adminId, adminEmail)
+        _userMessage.value = if (res.isSuccess) "Broadcast announcement sent to all users!" else "Failed to send broadcast."
+    }
+
+    suspend fun adminClearBroadcastMessage(adminId: String, adminEmail: String) {
+        val res = adminRepository.clearBroadcastMessage(adminId, adminEmail)
+        _userMessage.value = if (res.isSuccess) "Broadcast announcement removed." else "Failed to clear broadcast."
     }
 
     fun setKeepScreenAwake(enabled: Boolean) {

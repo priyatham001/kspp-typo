@@ -61,7 +61,7 @@ fun StatusAccessScreen(
         AccessDeniedReason.ACCESS_EXPIRED -> Quadruple(
             Icons.Default.HourglassTop,
             "TRIAL EXPIRED",
-            "ADMIN APPROVAL REQUIRED\n\nYour 8-hour free trial access has expired. Please contact administrator (nani68629@gmail.com) to grant continued access.",
+            "ADMIN APPROVAL REQUIRED\n\nYour 8-hour free trial access has expired. Please contact an administrator to grant continued access.",
             StatusYellow
         )
         AccessDeniedReason.PENDING -> Quadruple(
@@ -73,19 +73,19 @@ fun StatusAccessScreen(
         AccessDeniedReason.REJECTED -> Quadruple(
             Icons.Default.Block,
             "Access Rejected",
-            "Your REPLICA access request was rejected by administrator (nani68629@gmail.com).",
+            "Your REPLICA access request was rejected by an administrator.",
             StatusRed
         )
         AccessDeniedReason.SUSPENDED -> Quadruple(
             Icons.Default.Warning,
             "Account Suspended",
-            "Your REPLICA account is temporarily suspended by administrator (nani68629@gmail.com).",
+            "Your REPLICA account is temporarily suspended by an administrator.",
             StatusYellow
         )
         AccessDeniedReason.TERMINATED -> Quadruple(
             Icons.Default.Lock,
             "Access Terminated & Data Cleared",
-            "Your REPLICA access has been terminated by administrator (nani68629@gmail.com). All protected services and local data have been terminated.",
+            "Your REPLICA access has been terminated by an administrator. All protected services and local data have been terminated.",
             ErrorRed
         )
         AccessDeniedReason.MAINTENANCE -> Quadruple(

@@ -12,18 +12,18 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
 private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryCyan,
-    onPrimary = Color(0xFF001F28),
-    primaryContainer = Color(0xFF004D5A),
-    onPrimaryContainer = Color(0xFF9CF4FF),
+    primary = PrimaryBlue,
+    onPrimary = Color.Black,
+    primaryContainer = Color(0xFF0F3B66),
+    onPrimaryContainer = Color(0xFFBAE6FD),
 
-    secondary = SecondaryEmerald,
-    onSecondary = Color(0xFF00391A),
-    secondaryContainer = Color(0xFF005328),
-    onSecondaryContainer = Color(0xFF67FF9A),
+    secondary = SecondaryCyan,
+    onSecondary = Color.Black,
+    secondaryContainer = Color(0xFF0E4A5E),
+    onSecondaryContainer = Color(0xFFCFFAFE),
 
-    tertiary = TertiaryAmber,
-    onTertiary = Color(0xFF452B00),
+    tertiary = TertiaryIndigo,
+    onTertiary = Color.White,
 
     background = DarkBackground,
     onBackground = TextPrimaryDark,
@@ -40,17 +40,17 @@ private val DarkColorScheme = darkColorScheme(
 )
 
 private val LightColorScheme = lightColorScheme(
-    primary = Color(0xFF006877),
+    primary = Color(0xFF0284C7),
     onPrimary = Color.White,
-    primaryContainer = Color(0xFFA6EEFF),
-    onPrimaryContainer = Color(0xFF001F25),
+    primaryContainer = Color(0xFFE0F2FE),
+    onPrimaryContainer = Color(0xFF0369A1),
 
-    secondary = Color(0xFF006D39),
+    secondary = Color(0xFF0097A7),
     onSecondary = Color.White,
-    secondaryContainer = Color(0xFF70FCA4),
-    onSecondaryContainer = Color(0xFF00210C),
+    secondaryContainer = Color(0xFFE0F7FA),
+    onSecondaryContainer = Color(0xFF006064),
 
-    tertiary = Color(0xFF7B5800),
+    tertiary = Color(0xFF6366F1),
     onTertiary = Color.White,
 
     background = LightBackground,
@@ -60,7 +60,7 @@ private val LightColorScheme = lightColorScheme(
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = TextSecondaryLight,
 
-    error = Color(0xFFBA1A1A),
+    error = Color(0xFFDC2626),
     onError = Color.White,
     outline = LightCardBorder
 )

@@ -145,6 +145,38 @@ class AdminRepository(
         }
     }
 
+    suspend fun decreaseUserAccess(userId: String, subtractHours: Int = 1, adminId: String, adminEmail: String): Result<Unit> {
+        val now = System.currentTimeMillis()
+        return try {
+            val snapshot = firestore.collection("users").document(userId).get().await()
+            val currentExpiry = snapshot.getLong("accessExpiresAt") ?: now
+            val baseTime = if (currentExpiry > now) currentExpiry else now
+            val newExpiry = (baseTime - (subtractHours * 60 * 60 * 1000L)).coerceAtLeast(now)
+
+            firestore.collection("users").document(userId)
+                .update(
+                    mapOf(
+                        "accessExpiresAt" to newExpiry
+                    )
+                ).await()
+
+            recordAuditLog(
+                AuditLog(
+                    timestamp = now,
+                    adminId = adminId,
+                    adminEmail = adminEmail,
+                    action = "ACCESS_DECREASED_${subtractHours}H",
+                    targetUserId = userId,
+                    result = "SUCCESS"
+                )
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to decrease access", e)
+            Result.failure(e)
+        }
+    }
+
     suspend fun grantPermanentAccess(userId: String, adminId: String, adminEmail: String): Result<Unit> {
         return try {
             firestore.collection("users").document(userId)
@@ -336,13 +368,72 @@ class AdminRepository(
         }
     }
 
-    suspend fun setGlobalServiceStatus(
-        enabled: Boolean,
+    suspend fun sendBroadcastMessage(
+        title: String,
+        message: String,
         adminId: String,
-        adminEmail: String,
-        message: String = "REPLICA service is temporarily unavailable."
+        adminEmail: String
     ): Result<Unit> {
-        return setServiceMode(if (enabled) "ACTIVE" else "DISABLED", adminId, adminEmail, message)
+        val now = System.currentTimeMillis()
+        return try {
+            firestore.collection("settings").document("service_control")
+                .update(
+                    mapOf(
+                        "broadcastTitle" to title.trim(),
+                        "broadcastMessage" to message.trim(),
+                        "updatedBy" to adminEmail,
+                        "updatedAt" to now
+                    )
+                ).await()
+
+            recordAuditLog(
+                AuditLog(
+                    timestamp = now,
+                    adminId = adminId,
+                    adminEmail = adminEmail,
+                    action = "BROADCAST_MESSAGE_SENT",
+                    targetUserId = null,
+                    result = "SUCCESS"
+                )
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to send broadcast message", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun clearBroadcastMessage(
+        adminId: String,
+        adminEmail: String
+    ): Result<Unit> {
+        val now = System.currentTimeMillis()
+        return try {
+            firestore.collection("settings").document("service_control")
+                .update(
+                    mapOf(
+                        "broadcastTitle" to null,
+                        "broadcastMessage" to null,
+                        "updatedBy" to adminEmail,
+                        "updatedAt" to now
+                    )
+                ).await()
+
+            recordAuditLog(
+                AuditLog(
+                    timestamp = now,
+                    adminId = adminId,
+                    adminEmail = adminEmail,
+                    action = "BROADCAST_MESSAGE_CLEARED",
+                    targetUserId = null,
+                    result = "SUCCESS"
+                )
+            )
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to clear broadcast message", e)
+            Result.failure(e)
+        }
     }
 
     private suspend fun recordAuditLog(log: AuditLog) {

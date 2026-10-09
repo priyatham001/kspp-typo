@@ -54,8 +54,10 @@ data class UserProfile(
 data class ServiceControl(
     val serviceEnabled: Boolean = true,
     val maintenanceMode: Boolean = false,
-    val disabledMessage: String = "REPLICA service is currently unavailable. Please contact an administrator or try again later.",
-    val maintenanceMessage: String = "REPLICA is currently under maintenance. Please try again later.",
+    val disabledMessage: String = "replica_kspp service is currently unavailable. Please contact an administrator or try again later.",
+    val maintenanceMessage: String = "replica_kspp is currently under maintenance. Please try again later.",
+    val broadcastMessage: String? = null,
+    val broadcastTitle: String? = null,
     val updatedBy: String = "",
     val updatedAt: Long = System.currentTimeMillis()
 ) {

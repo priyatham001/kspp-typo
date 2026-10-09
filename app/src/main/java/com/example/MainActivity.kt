@@ -117,7 +117,7 @@ class MainActivity : ComponentActivity() {
                 viewModel.refreshBluetooth()
             }
 
-            LaunchedEffect(Unit) {
+            val requestBluetoothPermissions: () -> Unit = {
                 val neededPermissions = mutableListOf<String>()
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     if (ContextCompat.checkSelfPermission(this@MainActivity, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
@@ -382,7 +382,8 @@ class MainActivity : ComponentActivity() {
                                         ScreenTab.EDITOR -> HomeScreen(
                                             viewModel = viewModel,
                                             onNavigateToScripts = { currentTab = ScreenTab.SCRIPTS },
-                                            onNavigateToBluetooth = { currentTab = ScreenTab.SETTINGS }
+                                            onNavigateToBluetooth = { currentTab = ScreenTab.SETTINGS },
+                                            onRequestPermissions = requestBluetoothPermissions
                                         )
                                         ScreenTab.SCRIPTS -> ScriptsScreen(
                                             viewModel = viewModel,

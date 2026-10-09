@@ -18,15 +18,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.BluetoothDisabled
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Remove
@@ -40,6 +44,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
@@ -79,6 +84,7 @@ fun HomeScreen(
     viewModel: MainViewModel,
     onNavigateToScripts: () -> Unit,
     onNavigateToBluetooth: () -> Unit,
+    onRequestPermissions: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
@@ -89,9 +95,9 @@ fun HomeScreen(
     val userProfile by viewModel.userProfile.collectAsState()
     val serviceControl by viewModel.serviceControl.collectAsState()
 
-    var showSaveDialog by remember { mutableStateOf(false) }
-    var showClearDialog by remember { mutableStateOf(false) }
+    var isEditingTitle by remember { mutableStateOf(false) }
     var saveNameInput by remember(editorTitle) { mutableStateOf(editorTitle) }
+    var previousTextForUndo by remember { mutableStateOf<String?>(null) }
 
     val scrollState = rememberScrollState()
     val isApproved = userProfile?.hasActiveAccess == true && serviceControl.isOperational
@@ -111,22 +117,51 @@ fun HomeScreen(
             border = CardDefaults.outlinedCardBorder()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
-                Text(
-                    text = "replica_kspp",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = MaterialTheme.colorScheme.primary,
-                    letterSpacing = 2.sp
-                )
-                Text(
-                    text = "\"I replicate keyboard\"",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Medium
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "replica_kspp",
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            letterSpacing = 2.sp
+                        )
+                        Text(
+                            text = "\"I replicate keyboard\"",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+
+                    // Connected or Disconnected Status Chip
+                    val isConnected = connectionState is HidConnectionState.Connected
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (isConnected) StatusGreen.copy(alpha = 0.15f)
+                                else MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                            )
+                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                    ) {
+                        Text(
+                            text = if (isConnected) "● BT ONLINE" else "○ BT OFFLINE",
+                            color = if (isConnected) StatusGreen else MaterialTheme.colorScheme.error,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            fontFamily = FontFamily.Monospace
+                        )
+                    }
+                }
+
                 userProfile?.let {
-                    Spacer(modifier = Modifier.height(4.dp))
+                    Spacer(modifier = Modifier.height(8.dp))
                     Text(
                         text = "Access: ${it.getRemainingTimeFormatted()} • Status: ${it.status}",
                         fontSize = 11.sp,
@@ -146,10 +181,51 @@ fun HomeScreen(
             }
         }
 
+        // Admin Broadcast Announcement (if set by administrator)
+        if (!serviceControl.broadcastMessage.isNullOrBlank()) {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f)),
+                shape = RoundedCornerShape(14.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.Top
+                ) {
+                    Icon(
+                        Icons.Default.Notifications,
+                        contentDescription = "Announcement",
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = serviceControl.broadcastTitle ?: "ADMINISTRATOR ANNOUNCEMENT",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(3.dp))
+                        Text(
+                            text = serviceControl.broadcastMessage ?: "",
+                            fontSize = 12.sp,
+                            lineHeight = 16.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                    }
+                }
+            }
+        }
+
         // Connection Status Banner
         ConnectionStatusBanner(
             connectionState = connectionState,
-            onConnectClick = onNavigateToBluetooth,
+            onConnectClick = {
+                onRequestPermissions?.invoke()
+                onNavigateToBluetooth()
+            },
             onDisconnectClick = { viewModel.disconnectDevice() },
             onLockClick = { viewModel.lockNow() }
         )
@@ -171,7 +247,7 @@ fun HomeScreen(
                         text = when {
                             serviceControl.maintenanceMode -> serviceControl.maintenanceMessage
                             !serviceControl.serviceEnabled -> serviceControl.disabledMessage
-                            userProfile?.isAccessExpired == true -> "TRIAL EXPIRED — ADMIN APPROVAL REQUIRED. Contact admin nani68629@gmail.com to continue."
+                            userProfile?.isAccessExpired == true -> "TRIAL EXPIRED — ADMIN APPROVAL REQUIRED. Please request administrator approval to continue access."
                             else -> "Account Status: ${userProfile?.status ?: "Pending"}. Administrator approval required before Auto-Typing is unlocked."
                         },
                         style = MaterialTheme.typography.bodySmall,
@@ -194,24 +270,61 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(
-                            imageVector = Icons.Default.TextFields,
-                            contentDescription = "Text",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = editorTitle,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
+                    if (isEditingTitle) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            OutlinedTextField(
+                                value = saveNameInput,
+                                onValueChange = { saveNameInput = it },
+                                singleLine = true,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp),
+                                textStyle = TextStyle(fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            IconButton(
+                                onClick = {
+                                    viewModel.saveCurrentScript(saveNameInput)
+                                    isEditingTitle = false
+                                }
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = "Done", tint = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    } else {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.clickable { isEditingTitle = true }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.TextFields,
+                                contentDescription = "Text",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = editorTitle,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Icon(
+                                imageVector = Icons.Default.Edit,
+                                contentDescription = "Rename Document",
+                                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.7f),
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
                     }
 
                     val lines = if (editorText.isEmpty()) 0 else editorText.count { it == '\n' } + 1
                     Text(
-                        text = "Characters: ${editorText.length}  ($lines lines)",
+                        text = "${editorText.length} chars  ($lines lines)",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -247,47 +360,77 @@ fun HomeScreen(
                     )
                 )
 
+                // Inline Undo notice if text was just cleared
+                if (previousTextForUndo != null) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Editor cleared", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        TextButton(
+                            onClick = {
+                                viewModel.updateEditorText(previousTextForUndo ?: "")
+                                previousTextForUndo = null
+                            }
+                        ) {
+                            Text("UNDO", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Actions row: Save, Load, Clear, Sample
+                // Actions row: Save, Saved, Clear, Sample (Clean, responsive, no popup dialogs)
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    OutlinedButton(
-                        onClick = { showSaveDialog = true },
+                    Button(
+                        onClick = {
+                            viewModel.saveCurrentScript(saveNameInput.ifBlank { editorTitle })
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("save_text_button"),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Icon(Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("SAVE", fontSize = 11.sp)
+                        Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                     }
 
-                    OutlinedButton(
+                    FilledTonalButton(
                         onClick = onNavigateToScripts,
                         modifier = Modifier
                             .weight(1f)
                             .testTag("load_text_button"),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(10.dp)
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Saved", modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.FolderOpen, contentDescription = "Saved", modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("SAVED", fontSize = 11.sp)
+                        Text("Saved", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                     }
 
                     OutlinedButton(
-                        onClick = { showClearDialog = true },
+                        onClick = {
+                            previousTextForUndo = editorText
+                            viewModel.clearEditor()
+                        },
                         modifier = Modifier
                             .weight(1f)
                             .testTag("clear_text_button"),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(10.dp)
                     ) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("CLEAR", fontSize = 11.sp)
+                        Text("Clear", fontSize = 12.sp)
                     }
 
                     OutlinedButton(
@@ -295,9 +438,64 @@ fun HomeScreen(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("sample_text_button"),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("SAMPLE", fontSize = 11.sp)
+                        Text("Sample", fontSize = 12.sp)
+                    }
+                }
+
+                // Reminder banner to connect to Bluetooth
+                if (connectionState !is HidConnectionState.Connected) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.25f)
+                        ),
+                        shape = RoundedCornerShape(12.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                Icon(
+                                    Icons.Default.Bluetooth,
+                                    contentDescription = "Bluetooth",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Column {
+                                    Text(
+                                        text = "Bluetooth Not Connected",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "Please connect to host device to type keystrokes",
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Button(
+                                onClick = {
+                                    onRequestPermissions?.invoke()
+                                    onNavigateToBluetooth()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.height(34.dp)
+                            ) {
+                                Text("CONNECT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
                     }
                 }
             }
@@ -530,62 +728,6 @@ fun HomeScreen(
         }
     }
 
-    // Save Dialog
-    if (showSaveDialog) {
-        AlertDialog(
-            onDismissRequest = { showSaveDialog = false },
-            title = { Text("Save Document") },
-            text = {
-                OutlinedTextField(
-                    value = saveNameInput,
-                    onValueChange = { saveNameInput = it },
-                    label = { Text("Document Title") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.saveCurrentScript(saveNameInput)
-                        showSaveDialog = false
-                    }
-                ) {
-                    Text("SAVE")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSaveDialog = false }) {
-                    Text("CANCEL")
-                }
-            }
-        )
-    }
-
-    // Clear Dialog
-    if (showClearDialog) {
-        AlertDialog(
-            onDismissRequest = { showClearDialog = false },
-            title = { Text("Clear Editor?") },
-            text = { Text("Are you sure you want to clear the editor text?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        viewModel.clearEditor()
-                        showClearDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = ErrorRed)
-                ) {
-                    Text("CLEAR")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showClearDialog = false }) {
-                    Text("CANCEL")
-                }
-            }
-        )
-    }
 }
 
 @Composable

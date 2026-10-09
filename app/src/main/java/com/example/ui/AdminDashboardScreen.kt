@@ -109,7 +109,7 @@ fun AdminDashboardScreen(
                     Column {
                         Text("ADMIN CONTROL CENTER", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                         Text(
-                            "Admin: $adminEmail • ${if (isSuperAdmin) "SUPER_ADMIN" else "ADMIN"}",
+                            if (isSuperAdmin) "SUPER_ADMIN ACCESS" else "ADMINISTRATOR ACCESS",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.primary
                         )
@@ -178,6 +178,7 @@ fun AdminDashboardScreen(
                     2 -> AllUsersManagementTab(
                         users = allUsers,
                         onExtend = { targetUserForAction = it to "EXTEND_8H" },
+                        onDecrease = { targetUserForAction = it to "DECREASE_1H" },
                         onPermanent = { targetUserForAction = it to "PERMANENT" },
                         onSuspend = { targetUserForAction = it to "SUSPEND" },
                         onRestore = { targetUserForAction = it to "RESTORE" },
@@ -191,7 +192,17 @@ fun AdminDashboardScreen(
                     3 -> ServiceControlTab(
                         serviceControl = serviceControl,
                         isSuperAdmin = isSuperAdmin,
-                        onSelectMode = { requestedServiceMode = it }
+                        onSelectMode = { requestedServiceMode = it },
+                        onSendBroadcast = { title, msg ->
+                            scope.launch {
+                                viewModel.adminSendBroadcastMessage(title, msg, adminId, adminEmail)
+                            }
+                        },
+                        onClearBroadcast = {
+                            scope.launch {
+                                viewModel.adminClearBroadcastMessage(adminId, adminEmail)
+                            }
+                        }
                     )
                     4 -> AuditLogsTab(auditLogs = auditLogs)
                 }
@@ -301,6 +312,7 @@ fun AdminDashboardScreen(
                 Text(
                     text = when (action) {
                         "EXTEND_8H" -> "Continue / Extend Access (+8 hrs)"
+                        "DECREASE_1H" -> "Decrease Access (-1 hr)"
                         "PERMANENT" -> "Grant Permanent Access"
                         "TERMINATE" -> "Terminate Access & Remote Wipe"
                         "DELETE" -> "Delete User From REPLICA"
@@ -316,6 +328,7 @@ fun AdminDashboardScreen(
                 Text(
                     text = when (action) {
                         "EXTEND_8H" -> "Continue REPLICA access for ${user.displayName} (${user.email}) for another 8 hours?"
+                        "DECREASE_1H" -> "Decrease remaining access time for ${user.displayName} (${user.email}) by 1 hour?"
                         "PERMANENT" -> "Grant permanent, unlimited REPLICA access to ${user.displayName} (${user.email})?"
                         "TERMINATE" -> "Terminate access for ${user.displayName}? Their active auto-typing will stop and all local REPLICA scripts on their device will be wiped."
                         "DELETE" -> "Permanently remove ${user.displayName} (${user.email}) from REPLICA?"
@@ -334,6 +347,7 @@ fun AdminDashboardScreen(
                             when (action) {
                                 "APPROVE" -> viewModel.adminApproveUser(user.userId, adminId, adminEmail)
                                 "EXTEND_8H" -> viewModel.adminExtendAccess(user.userId, 8, adminId, adminEmail)
+                                "DECREASE_1H" -> viewModel.adminDecreaseAccess(user.userId, 1, adminId, adminEmail)
                                 "PERMANENT" -> viewModel.adminGrantPermanentAccess(user.userId, adminId, adminEmail)
                                 "REJECT" -> viewModel.adminRejectUser(user.userId, adminId, adminEmail)
                                 "SUSPEND" -> viewModel.adminSuspendUser(user.userId, adminId, adminEmail)
@@ -351,6 +365,7 @@ fun AdminDashboardScreen(
                     Text(
                         when (action) {
                             "EXTEND_8H" -> "CONTINUE (+8h)"
+                            "DECREASE_1H" -> "DECREASE (-1h)"
                             "PERMANENT" -> "GRANT PERMANENT"
                             "TERMINATE" -> "TERMINATE & WIPE"
                             "DELETE" -> "DELETE USER"
@@ -489,6 +504,7 @@ fun PendingUsersTab(
 fun AllUsersManagementTab(
     users: List<UserProfile>,
     onExtend: (UserProfile) -> Unit,
+    onDecrease: (UserProfile) -> Unit,
     onPermanent: (UserProfile) -> Unit,
     onSuspend: (UserProfile) -> Unit,
     onRestore: (UserProfile) -> Unit,
@@ -540,15 +556,21 @@ fun AllUsersManagementTab(
                                     Button(
                                         onClick = { onExtend(user) },
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                        modifier = Modifier.padding(end = 6.dp)
+                                        modifier = Modifier.padding(end = 4.dp)
                                     ) {
-                                        Text("CONTINUE (+8h)", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                        Text("+8h", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { onDecrease(user) },
+                                        modifier = Modifier.padding(end = 4.dp)
+                                    ) {
+                                        Text("-1h", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                     }
                                     OutlinedButton(
                                         onClick = { onPermanent(user) },
-                                        modifier = Modifier.padding(end = 6.dp)
+                                        modifier = Modifier.padding(end = 4.dp)
                                     ) {
-                                        Text("PERMANENT", fontSize = 11.sp)
+                                        Text("PERM", fontSize = 11.sp)
                                     }
                                 }
 
@@ -759,92 +781,190 @@ fun UserCard(
 fun ServiceControlTab(
     serviceControl: com.example.auth.ServiceControl,
     isSuperAdmin: Boolean,
-    onSelectMode: (String) -> Unit
+    onSelectMode: (String) -> Unit,
+    onSendBroadcast: (String, String) -> Unit,
+    onClearBroadcast: () -> Unit
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = CardDefaults.outlinedCardBorder()
-    ) {
-        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Text("GLOBAL REPLICA SERVICE CONTROL", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+    var broadcastTitleInput by remember(serviceControl.broadcastTitle) {
+        mutableStateOf(serviceControl.broadcastTitle ?: "IMPORTANT NOTICE")
+    }
+    var broadcastMessageInput by remember(serviceControl.broadcastMessage) {
+        mutableStateOf(serviceControl.broadcastMessage ?: "")
+    }
 
-            Text(
-                "Controls whether REPLICA auto-typing and Bluetooth services are available to all users across the system.",
-                fontSize = 13.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = CardDefaults.outlinedCardBorder()
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("GLOBAL REPLICA SERVICE CONTROL", fontWeight = FontWeight.Bold, fontSize = 16.sp)
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Current Status: ", fontWeight = FontWeight.Medium)
-                val currentMode = serviceControl.currentMode
                 Text(
-                    currentMode,
-                    fontWeight = FontWeight.ExtraBold,
-                    color = when (currentMode) {
-                        "ACTIVE" -> StatusGreen
-                        "MAINTENANCE" -> StatusYellow
-                        else -> StatusRed
-                    }
+                    "Controls whether REPLICA auto-typing and Bluetooth services are available to all users across the system.",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
 
-            if (serviceControl.isUnavailable) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Current Status: ", fontWeight = FontWeight.Medium)
+                    val currentMode = serviceControl.currentMode
+                    Text(
+                        currentMode,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = when (currentMode) {
+                            "ACTIVE" -> StatusGreen
+                            "MAINTENANCE" -> StatusYellow
+                            else -> StatusRed
+                        }
+                    )
+                }
+
+                if (serviceControl.isUnavailable) {
+                    Text(
+                        "Message shown to users: \"${serviceControl.effectiveMessage}\"",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                if (isSuperAdmin) {
+                    Text("Change Service Status:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { onSelectMode("ACTIVE") },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (serviceControl.currentMode == "ACTIVE") StatusGreen else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (serviceControl.currentMode == "ACTIVE") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                            )
+                        ) {
+                            Text("ACTIVE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { onSelectMode("MAINTENANCE") },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (serviceControl.currentMode == "MAINTENANCE") StatusYellow else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (serviceControl.currentMode == "MAINTENANCE") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
+                            )
+                        ) {
+                            Text("MAINTENANCE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = { onSelectMode("DISABLED") },
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (serviceControl.currentMode == "DISABLED") ErrorRed else MaterialTheme.colorScheme.surfaceVariant,
+                                contentColor = if (serviceControl.currentMode == "DISABLED") MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface
+                            )
+                        ) {
+                            Text("DISABLED", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                } else {
+                    Text(
+                        "Only SUPER_ADMIN can change the global REPLICA service status.",
+                        color = ErrorRed,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+
+        // Broadcast Announcement Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = CardDefaults.outlinedCardBorder()
+        ) {
+            Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("BROADCAST ANNOUNCEMENT TO USERS", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+
                 Text(
-                    "Message shown to users: \"${serviceControl.effectiveMessage}\"",
+                    "Send a banner announcement message that displays prominently on all user screens.",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
 
-            if (isSuperAdmin) {
-                Text("Change Service Status:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                if (!serviceControl.broadcastMessage.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f))
+                            .padding(12.dp)
+                    ) {
+                        Column {
+                            Text(
+                                "Active Announcement: ${serviceControl.broadcastTitle ?: ""}",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                serviceControl.broadcastMessage ?: "",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+
+                OutlinedTextField(
+                    value = broadcastTitleInput,
+                    onValueChange = { broadcastTitleInput = it },
+                    label = { Text("Announcement Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = broadcastMessageInput,
+                    onValueChange = { broadcastMessageInput = it },
+                    label = { Text("Message to Users") },
+                    placeholder = { Text("e.g. System update completed. New ZipShare programs added!") },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     Button(
-                        onClick = { onSelectMode("ACTIVE") },
+                        onClick = {
+                            if (broadcastMessageInput.isNotBlank()) {
+                                onSendBroadcast(broadcastTitleInput, broadcastMessageInput)
+                            }
+                        },
+                        enabled = broadcastMessageInput.isNotBlank(),
                         modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (serviceControl.currentMode == "ACTIVE") StatusGreen else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (serviceControl.currentMode == "ACTIVE") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Text("ACTIVE", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text("BROADCAST MESSAGE", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
 
-                    Button(
-                        onClick = { onSelectMode("MAINTENANCE") },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (serviceControl.currentMode == "MAINTENANCE") StatusYellow else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (serviceControl.currentMode == "MAINTENANCE") MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Text("MAINTENANCE", fontSize = 10.sp, fontWeight = FontWeight.Bold)
-                    }
-
-                    Button(
-                        onClick = { onSelectMode("DISABLED") },
-                        modifier = Modifier.weight(1f),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (serviceControl.currentMode == "DISABLED") ErrorRed else MaterialTheme.colorScheme.surfaceVariant,
-                            contentColor = if (serviceControl.currentMode == "DISABLED") MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSurface
-                        )
-                    ) {
-                        Text("DISABLED", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    if (!serviceControl.broadcastMessage.isNullOrBlank()) {
+                        OutlinedButton(
+                            onClick = onClearBroadcast,
+                            modifier = Modifier.weight(0.6f),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRed)
+                        ) {
+                            Text("CLEAR", fontSize = 12.sp)
+                        }
                     }
                 }
-            } else {
-                Text(
-                    "Only SUPER_ADMIN can change the global REPLICA service status.",
-                    color = ErrorRed,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
             }
         }
     }

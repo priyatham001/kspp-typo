@@ -80,13 +80,13 @@ fun LoginScreen(
         )
     }
 
-    // 2. Continuous Optical Illusion & Floating Oscillation
-    val infiniteTransition = rememberInfiniteTransition(label = "sphere_illusion_anim")
+    // 2. Continuous Floating & Glow Pulsing Animation
+    val infiniteTransition = rememberInfiniteTransition(label = "keycap_floating_anim")
 
     // Gentle 3D floating / hovering oscillation
     val floatOffset by infiniteTransition.animateFloat(
-        initialValue = -6f,
-        targetValue = 6f,
+        initialValue = -7f,
+        targetValue = 7f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 2800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -96,8 +96,8 @@ fun LoginScreen(
 
     // Gentle pulsing scale
     val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.98f,
-        targetValue = 1.03f,
+        initialValue = 0.96f,
+        targetValue = 1.05f,
         animationSpec = infiniteRepeatable(
             animation = tween(durationMillis = 2400, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
@@ -107,10 +107,10 @@ fun LoginScreen(
 
     // Glow aura alpha
     val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.7f,
+        initialValue = 0.35f,
+        targetValue = 0.85f,
         animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2000, easing = FastOutSlowInEasing),
+            animation = tween(durationMillis = 1800, easing = FastOutSlowInEasing),
             repeatMode = RepeatMode.Reverse
         ),
         label = "glow_alpha"
@@ -136,10 +136,10 @@ fun LoginScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
-                // ANIMATED SPHERE HERO
+                // ANIMATED CELESTIAL STAR CLUSTER HERO
                 Box(
                     modifier = Modifier
-                        .size(160.dp)
+                        .size(164.dp)
                         .offset(y = floatOffset.dp)
                         .graphicsLayer {
                             alpha = entryAlpha.value
@@ -148,37 +148,37 @@ fun LoginScreen(
                         },
                     contentAlignment = Alignment.Center
                 ) {
-                    // Outer glowing holographic aura ring
+                    // Outer radiant electric blue aura
                     Box(
                         modifier = Modifier
-                            .size(156.dp)
+                            .size(164.dp)
                             .graphicsLayer {
-                                scaleX = 1.06f
-                                scaleY = 1.06f
+                                scaleX = 1.1f
+                                scaleY = 1.1f
                                 alpha = glowAlpha
                             }
-                            .clip(CircleShape)
+                            .clip(RoundedCornerShape(32.dp))
                             .background(
                                 Brush.radialGradient(
                                     colors = listOf(
                                         MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                        MaterialTheme.colorScheme.tertiary.copy(alpha = 0.2f),
+                                        Color(0xFF00E5FF).copy(alpha = 0.25f),
                                         Color.Transparent
                                     )
                                 )
                             )
                     )
 
-                    // The Supplied Sphere Image kept recognizable & crisp
+                    // Animated Sleek replica_app_icon Keycap Hero
                     Image(
-                        painter = painterResource(id = R.drawable.replica_sphere),
-                        contentDescription = "replica_kspp Sphere Icon",
-                        contentScale = ContentScale.Crop,
+                        painter = painterResource(id = R.drawable.replica_app_icon),
+                        contentDescription = "replica_kspp Icon Animation",
+                        contentScale = ContentScale.Fit,
                         modifier = Modifier
                             .size(136.dp)
-                            .clip(CircleShape)
-                            .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.4f), CircleShape)
-                            .shadow(16.dp, CircleShape)
+                            .clip(RoundedCornerShape(26.dp))
+                            .border(1.5.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.6f), RoundedCornerShape(26.dp))
+                            .shadow(16.dp, RoundedCornerShape(26.dp))
                     )
                 }
 

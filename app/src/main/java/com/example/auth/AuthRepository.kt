@@ -230,11 +230,16 @@ class AuthRepository(
                         val updatedBy = snapshot.getString("updatedBy") ?: ""
                         val updatedAt = snapshot.getLong("updatedAt") ?: System.currentTimeMillis()
 
+                        val broadcastMsg = snapshot.getString("broadcastMessage")
+                        val broadcastTitle = snapshot.getString("broadcastTitle")
+
                         _serviceControl.value = ServiceControl(
                             serviceEnabled = enabled,
                             maintenanceMode = maintenance,
                             disabledMessage = message,
                             maintenanceMessage = maintMsg,
+                            broadcastMessage = broadcastMsg,
+                            broadcastTitle = broadcastTitle,
                             updatedBy = updatedBy,
                             updatedAt = updatedAt
                         )
