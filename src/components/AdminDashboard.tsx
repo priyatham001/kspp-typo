@@ -119,7 +119,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <div>
             <h2 className="text-lg font-bold text-white tracking-wide">ADMIN CONTROL CENTER</h2>
             <div className="text-xs text-cyan-400 font-mono">
-              Admin: {currentProfile?.email || 'nani68629@gmail.com'} • {isSuperAdmin ? 'SUPER_ADMIN' : 'ADMIN'}
+              Admin: {currentProfile?.email || 'Authorized Administrator'} • {isSuperAdmin ? 'SUPER_ADMIN' : 'ADMIN'}
             </div>
           </div>
         </div>

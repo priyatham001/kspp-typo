@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
-import { LogIn, Sparkles, Shield, Clock } from 'lucide-react';
+import { LogIn, Sparkles, Clock } from 'lucide-react';
 import { RotatingDotsSphere } from './RotatingDotsSphere';
 
 interface LoginScreenProps {
@@ -128,32 +128,23 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             )}
           </button>
 
-          {/* Quick Trial & Admin shortcuts */}
+          {/* Quick Free Trial shortcut */}
           <div className="w-full mt-4 pt-4 border-t border-[#1f293d]/80 flex flex-col gap-2">
-            <div className="text-[11px] font-semibold text-gray-400 mb-1">Quick Identity Login:</div>
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                onClick={() => onLogin('guest@replica.local', 'Trial User')}
-                className="py-2 px-3 rounded-xl bg-[#0b0f19] hover:bg-[#151c2e] border border-[#1f293d] text-left text-xs transition-colors flex items-center gap-2 text-cyan-300"
-              >
-                <Clock size={14} className="text-cyan-400 shrink-0" />
-                <div className="truncate">
-                  <div className="font-bold text-[11px]">8h Free Trial</div>
-                  <div className="text-[10px] text-gray-400 truncate">guest@trial...</div>
+            <button
+              onClick={() => onLogin('guest@replica.local', 'Trial User')}
+              className="w-full py-2.5 px-3 rounded-xl bg-[#0b0f19] hover:bg-[#151c2e] border border-[#1f293d] text-left text-xs transition-colors flex items-center justify-between text-cyan-300"
+            >
+              <div className="flex items-center gap-2.5">
+                <Clock size={15} className="text-cyan-400 shrink-0" />
+                <div>
+                  <div className="font-bold text-xs text-white">8h Instant Free Trial</div>
+                  <div className="text-[10px] text-gray-400">Launch workspace without credentials</div>
                 </div>
-              </button>
-
-              <button
-                onClick={() => onLogin('nani68629@gmail.com', 'Nani (Super Admin)')}
-                className="py-2 px-3 rounded-xl bg-[#0b0f19] hover:bg-[#151c2e] border border-blue-900/60 text-left text-xs transition-colors flex items-center gap-2 text-blue-300"
-              >
-                <Shield size={14} className="text-blue-400 shrink-0" />
-                <div className="truncate">
-                  <div className="font-bold text-[11px]">Super Admin</div>
-                  <div className="text-[10px] text-gray-400 truncate">nani68629@...</div>
-                </div>
-              </button>
-            </div>
+              </div>
+              <span className="text-[10px] font-mono text-cyan-400 font-semibold bg-cyan-950/60 border border-cyan-800/40 px-2 py-0.5 rounded-md">
+                DEMO
+              </span>
+            </button>
 
             {/* Custom Account toggle */}
             {!showCustom ? (
