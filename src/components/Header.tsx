@@ -22,7 +22,7 @@ export const Header: React.FC<HeaderProps> = ({
   return (
     <header className="sticky top-0 z-40 bg-[#090d16]/95 backdrop-blur-md border-b border-[#1f293d] px-4 py-3 flex items-center justify-between">
       <div>
-        <h1 className="text-xl font-extrabold tracking-wider text-white">replica_kspp</h1>
+        <h1 className="text-xl font-extrabold tracking-wider text-white">REPLICA</h1>
         <p className="text-xs font-mono text-cyan-400 font-semibold tracking-wide">
           &quot;I replicate keyboard&quot;
         </p>

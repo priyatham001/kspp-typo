@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { UserProfile } from '../types';
 import { LogIn, Sparkles, Shield, Clock } from 'lucide-react';
+import { RotatingDotsSphere } from './RotatingDotsSphere';
 
 interface LoginScreenProps {
   onLogin: (email: string, name: string) => void;
@@ -61,27 +62,21 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
                 transform: `perspective(500px) rotateX(${mousePos.y}deg) rotateY(${mousePos.x}deg)`,
                 transition: 'transform 0.15s ease-out'
               }}
-              className="relative w-36 h-36 rounded-full overflow-hidden border-2 border-cyan-400/50 shadow-[0_0_35px_rgba(6,182,212,0.45)] bg-black"
+              className="relative w-36 h-36 rounded-full overflow-hidden border-2 border-cyan-400/50 shadow-[0_0_35px_rgba(6,182,212,0.45)] bg-black flex items-center justify-center"
             >
-              <img
-                src="/image.png"
-                alt="replica_kspp sphere illusion"
-                className={`w-full h-full object-cover animate-sphere-illusion select-none pointer-events-none drop-shadow-[0_0_20px_rgba(6,182,212,0.6)] ${
-                  isWarping ? 'scale-110 brightness-125' : ''
-                } transition-all duration-300`}
-                onError={(e) => {
-                  // Fallback if image.png fails
-                  (e.target as HTMLImageElement).src = '/replica_sphere.jpg';
-                }}
+              <RotatingDotsSphere
+                size={144}
+                dotCount={850}
+                className={isWarping ? 'scale-110 brightness-125 transition-all duration-300' : 'transition-all duration-300'}
               />
               {/* Refraction shimmer overlay */}
-              <div className="absolute inset-0 bg-gradient-to-t from-cyan-900/40 via-transparent to-white/20 pointer-events-none rounded-full"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-cyan-900/40 via-transparent to-white/10 pointer-events-none rounded-full"></div>
             </div>
           </div>
 
           {/* Title & Motto */}
           <h1 className="text-3xl font-extrabold text-white tracking-widest mb-1">
-            replica_kspp
+            REPLICA
           </h1>
           <p className="text-sm font-mono text-cyan-400 font-semibold mb-2">
             &quot;I replicate keyboard&quot;
@@ -99,7 +94,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
 
           {/* Primary Action: Google Sign-in */}
           <button
-            onClick={() => onLogin('pskcoll3@gmail.com', 'PSK Coll')}
+            onClick={() => onLogin('user@replica.local', 'REPLICA User')}
             disabled={isLoading}
             className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-sm shadow-lg shadow-blue-600/30 transition-all flex items-center justify-center gap-3 disabled:opacity-50"
           >
@@ -138,13 +133,13 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({
             <div className="text-[11px] font-semibold text-gray-400 mb-1">Quick Identity Login:</div>
             <div className="grid grid-cols-2 gap-2">
               <button
-                onClick={() => onLogin('pskcoll3@gmail.com', 'PSK Coll')}
+                onClick={() => onLogin('guest@replica.local', 'Trial User')}
                 className="py-2 px-3 rounded-xl bg-[#0b0f19] hover:bg-[#151c2e] border border-[#1f293d] text-left text-xs transition-colors flex items-center gap-2 text-cyan-300"
               >
                 <Clock size={14} className="text-cyan-400 shrink-0" />
                 <div className="truncate">
                   <div className="font-bold text-[11px]">8h Free Trial</div>
-                  <div className="text-[10px] text-gray-400 truncate">pskcoll3@...</div>
+                  <div className="text-[10px] text-gray-400 truncate">guest@trial...</div>
                 </div>
               </button>
 

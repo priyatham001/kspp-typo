@@ -212,12 +212,12 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </div>
         <ol className="text-xs text-gray-400 space-y-1.5 pl-4 list-decimal leading-relaxed">
           <li>Pair Android phone or web host with your Windows laptop via Bluetooth.</li>
-          <li>Open PSK BT Auto / replica_kspp and verify &quot;🟢 Connected&quot; status.</li>
+          <li>Open REPLICA and verify &quot;🟢 Connected&quot; status.</li>
           <li>Perform the Notepad First Test in Keyboard Test screen.</li>
           <li>On Windows, click inside target text field (Notepad, CodeTantra editor, form, terminal).</li>
           <li>Paste or load your text/code into the Text Editor.</li>
           <li>Set typing delay (25ms recommended for web editors; 5ms for fast terminal).</li>
-          <li>Tap [RUN]. replica_kspp streams HID keyboard reports character-by-character.</li>
+          <li>Tap [RUN]. REPLICA streams HID keyboard reports character-by-character.</li>
           <li>Windows receives physical keystrokes without any companion software or clipboard access.</li>
           <li>Press [STOP] or [LOCK NOW] at any moment to immediately halt transmission.</li>
         </ol>
