@@ -41,24 +41,22 @@ class CompanionManager(private val context: Context) {
     }
 
     /**
-     * Extracts bundled replica-companion.exe from assets to internal storage if needed.
+     * Extracts bundled replica-companion.exe from assets to internal storage if needed or outdated.
      */
     fun ensureLocalCompanionExtracted(): Boolean {
-        if (localCompanionFile.exists() && localCompanionFile.length() > 0) {
-            return true
-        }
-
         return try {
-            context.assets.open("companion/replica-companion.exe").use { input ->
-                FileOutputStream(localCompanionFile).use { output ->
-                    input.copyTo(output)
-                }
+            val assetBytes = context.assets.open("companion/replica-companion.exe").use { it.readBytes() }
+            if (localCompanionFile.exists() && localCompanionFile.length() == assetBytes.size.toLong()) {
+                return true
             }
-            Log.d(TAG, "Bundled replica-companion.exe extracted to ${localCompanionFile.absolutePath}")
+            FileOutputStream(localCompanionFile).use { output ->
+                output.write(assetBytes)
+            }
+            Log.d(TAG, "Bundled replica-companion.exe (${assetBytes.size} bytes) extracted to ${localCompanionFile.absolutePath}")
             true
         } catch (e: Exception) {
             Log.w(TAG, "Could not extract companion from assets: ${e.message}")
-            false
+            localCompanionFile.exists() && localCompanionFile.length() > 0
         }
     }
 
@@ -113,8 +111,8 @@ class CompanionManager(private val context: Context) {
     }
 
     fun getDefaultCompanionInfo(): CompanionInfo {
-        val size = if (localCompanionFile.exists() && localCompanionFile.length() > 0) localCompanionFile.length() else 265080L
-        val sha = if (localCompanionFile.exists() && localCompanionFile.length() > 0) calculateFileSha256(localCompanionFile) else "dbf6b872f48b431d897492a094a03f6a27ae9e84b1f1f5fe4110f04326f790df"
+        val size = if (localCompanionFile.exists() && localCompanionFile.length() > 0) localCompanionFile.length() else 437196L
+        val sha = if (localCompanionFile.exists() && localCompanionFile.length() > 0) calculateFileSha256(localCompanionFile) else "61170807a9f46930974ac2b0335f5aaa695f9112b95d6fa99b18755b1e474e9a"
         return CompanionInfo(
             version = "1.1.0",
             protocolVersion = 1,
@@ -125,7 +123,7 @@ class CompanionManager(private val context: Context) {
             downloadUrl = "/download/replica-companion.exe",
             uploadedBy = "admin",
             lastUpdated = System.currentTimeMillis(),
-            releaseNotes = "Official Windows companion program for USB auto-typing into Windows applications."
+            releaseNotes = "Official Windows companion program v1.1.0 with automatic ADB discovery, authorization diagnostics, dual-tunnel (8989/8990) auto-recovery, and multi-threaded Unicode typing."
         )
     }
 

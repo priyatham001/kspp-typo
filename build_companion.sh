@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-echo "=== Building REPLICA Windows Companion v1.1.0 ==="
+echo "=== Building REPLICA Windows Companion v1.2.0 ==="
 mkdir -p companion
 mkdir -p public/downloads
 mkdir -p app/src/main/assets/companion
@@ -39,7 +39,7 @@ cat > companion_meta.json <<EOF
   "sha256": "$FILE_SHA",
   "uploadedBy": "nani68629@gmail.com",
   "lastUpdated": "$LAST_UPDATED",
-  "releaseNotes": "Updated Windows Companion v1.1.0: multi-threaded typing, ADB auto-tunneling, 2MB receive buffer, Unicode escape decoding, and robust reconnection."
+  "releaseNotes": "Updated Windows Companion v1.1.0: automatic ADB discovery, authorization prompt diagnostics, dual-tunnel (8989 reverse + 8990 forward) auto-dial, QuickEdit freeze prevention, and multi-threaded Unicode typing."
 }
 EOF
 

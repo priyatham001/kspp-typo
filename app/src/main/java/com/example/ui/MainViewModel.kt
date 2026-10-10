@@ -52,6 +52,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val usbConnectionState: StateFlow<UsbConnectionState> = usbTypingManager.connectionState
     val isUsbCableConnected: StateFlow<Boolean> = usbTypingManager.isUsbCableConnected
+    val isDeveloperOptionsEnabled: StateFlow<Boolean> = usbTypingManager.isDeveloperOptionsEnabled
+    val isUsbDebuggingEnabled: StateFlow<Boolean> = usbTypingManager.isUsbDebuggingEnabled
+    val usbDiagnosticsReport = usbTypingManager.diagnosticsReport
     val usbTypingProgress: StateFlow<UsbTypingProgress> = usbTypingManager.typingProgress
     val companionInfo: StateFlow<CompanionInfo> = companionManager.getCompanionInfoFlow().stateIn(
         viewModelScope,
@@ -577,24 +580,38 @@ public class Main {
         return ok
     }
 
+    fun refreshUsbSystemSettings() {
+        usbTypingManager.refreshSystemSettingsState()
+    }
+
     fun checkUsbConnection(host: String = "127.0.0.1", port: Int = 8989) {
         viewModelScope.launch {
             val state = usbTypingManager.checkConnection(host, port)
             when (state) {
                 is UsbConnectionState.Synced -> {
-                    _userMessage.value = "Synced with Windows Companion! Ping: ${state.latencyMs} ms"
+                    _userMessage.value = "Synced with Windows Companion v${state.companionVersion}! Ping: ${state.latencyMs} ms"
                 }
                 is UsbConnectionState.Incompatible -> {
                     _userMessage.value = "Warning: ${state.reason}"
                 }
                 is UsbConnectionState.Disconnected -> {
-                    _userMessage.value = state.reason
+                    _userMessage.value = "${state.failedStage}: ${state.reason}"
                 }
                 is UsbConnectionState.Error -> {
-                    _userMessage.value = "USB Error: ${state.message}"
+                    _userMessage.value = "USB Error (${state.failedStage}): ${state.message}"
                 }
                 else -> Unit
             }
+        }
+    }
+
+    fun sendUsbQuickTestMessage() {
+        val sample = "REPLICA USB Typing Verified! Handshake & Keystroke injection working."
+        val ok = usbTypingManager.startTyping(sample, 20)
+        if (ok) {
+            _userMessage.value = "Sending test keystrokes to PC (focus Notepad window now!)..."
+        } else {
+            _userMessage.value = "Cannot test typing: Phone is not Synced with Windows Companion."
         }
     }
 
