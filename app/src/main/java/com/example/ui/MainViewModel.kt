@@ -22,6 +22,12 @@ import com.example.storage.ScriptManager
 import com.example.storage.SettingsManager
 import com.example.typing.TypingEngine
 import com.example.typing.TypingState
+import com.example.usb.CompanionInfo
+import com.example.usb.CompanionManager
+import com.example.usb.UsbConnectionState
+import com.example.usb.UsbTypingManager
+import com.example.usb.UsbTypingProgress
+import android.net.Uri
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -38,10 +44,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val scriptManager = ScriptManager(application.applicationContext)
     val settingsManager = SettingsManager(application.applicationContext)
     val passcodeManager = PasscodeManager(application.applicationContext)
+    val usbTypingManager = UsbTypingManager(application.applicationContext)
+    val companionManager = CompanionManager(application.applicationContext)
 
     val userProfile: StateFlow<UserProfile?> = authRepository.currentProfile
     val serviceControl: StateFlow<ServiceControl> = authRepository.serviceControl
 
+    val usbConnectionState: StateFlow<UsbConnectionState> = usbTypingManager.connectionState
+    val isUsbCableConnected: StateFlow<Boolean> = usbTypingManager.isUsbCableConnected
+    val usbTypingProgress: StateFlow<UsbTypingProgress> = usbTypingManager.typingProgress
+    val companionInfo: StateFlow<CompanionInfo> = companionManager.getCompanionInfoFlow().stateIn(
+        viewModelScope,
+        SharingStarted.WhileSubscribed(5000),
+        companionManager.getDefaultCompanionInfo()
+    )
+
+    val isHidRegistered: StateFlow<Boolean> = hidManager.isHidRegistered
     val connectionState: StateFlow<HidConnectionState> = hidManager.connectionState
     val pairedDevices: StateFlow<List<BluetoothDevice>> = hidManager.pairedDevices
     val connectedDevice: StateFlow<BluetoothDevice?> = hidManager.connectedDevice
@@ -295,6 +313,22 @@ public class Main {
         typingEngine.resumeTyping()
     }
 
+    fun restartTyping() {
+        val profile = userProfile.value
+        if (profile == null || !profile.hasActiveAccess) {
+            _userMessage.value = "Access not approved or 8-hour period expired."
+            return
+        }
+        typingEngine.restartTyping()
+    }
+
+    fun cleanCurrentEditorText() {
+        val original = _editorText.value
+        val cleaned = KeyboardMapper.cleanText(original)
+        _editorText.value = cleaned
+        _userMessage.value = "Text sanitized for US QWERTY keyboard."
+    }
+
     fun stopTyping() {
         typingEngine.stopTyping()
     }
@@ -356,6 +390,25 @@ public class Main {
         }
     }
 
+    fun duplicateScript(id: Long) {
+        viewModelScope.launch {
+            val newId = scriptManager.duplicateScript(id)
+            if (newId != null) {
+                _userMessage.value = "Document duplicated."
+            }
+        }
+    }
+
+    fun createNewScript(title: String, content: String = "") {
+        viewModelScope.launch {
+            val newId = scriptManager.saveScript(title, content)
+            _currentScriptId.value = newId
+            _editorTitle.value = title
+            _editorText.value = content
+            _userMessage.value = "Created '$title'."
+        }
+    }
+
     fun connectDevice(device: BluetoothDevice) {
         val profile = userProfile.value
         if (profile == null || !profile.isApproved) {
@@ -372,6 +425,18 @@ public class Main {
 
     fun refreshBluetooth() {
         hidManager.refresh()
+    }
+
+    fun openBluetoothSettings(context: Context) {
+        hidManager.openBluetoothSettings(context)
+    }
+
+    fun requestDiscoverability(context: Context) {
+        hidManager.requestDiscoverability(context)
+    }
+
+    fun getDiagnosticsSummary(): String {
+        return hidManager.getDiagnosticsSummary()
     }
 
     fun sendTestKey(keyCode: Byte, modifier: Byte = 0) {
@@ -399,6 +464,12 @@ public class Main {
             _isTestingAllKeys.value = false
             _userMessage.value = "Test string completed on host!"
         }
+    }
+
+    fun cancelTestAllKeys() {
+        typingEngine.stopTyping()
+        _isTestingAllKeys.value = false
+        _userMessage.value = "Automated key test cancelled."
     }
 
     // Admin Operations
@@ -506,9 +577,84 @@ public class Main {
         return ok
     }
 
+    fun checkUsbConnection(host: String = "127.0.0.1", port: Int = 8989) {
+        viewModelScope.launch {
+            val state = usbTypingManager.checkConnection(host, port)
+            when (state) {
+                is UsbConnectionState.Synced -> {
+                    _userMessage.value = "Synced with Windows Companion! Ping: ${state.latencyMs} ms"
+                }
+                is UsbConnectionState.Incompatible -> {
+                    _userMessage.value = "Warning: ${state.reason}"
+                }
+                is UsbConnectionState.Disconnected -> {
+                    _userMessage.value = state.reason
+                }
+                is UsbConnectionState.Error -> {
+                    _userMessage.value = "USB Error: ${state.message}"
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    fun startUsbTyping(text: String, delayMs: Int = 25) {
+        if (text.isBlank()) {
+            _userMessage.value = "Editor text is empty. Enter or paste text first."
+            return
+        }
+        val ok = usbTypingManager.startTyping(text, delayMs)
+        if (!ok) {
+            _userMessage.value = "Failed to start USB typing. Ensure phone is Synced with Windows Companion."
+        }
+    }
+
+    fun pauseUsbTyping() {
+        usbTypingManager.pauseTyping()
+    }
+
+    fun resumeUsbTyping() {
+        usbTypingManager.resumeTyping()
+    }
+
+    fun stopUsbTyping() {
+        usbTypingManager.stopTyping()
+        _userMessage.value = "USB Typing stopped."
+    }
+
+    fun shareCompanionFile(context: Context) {
+        companionManager.shareCompanionFile(context)
+    }
+
+    fun shareCompanionDownloadLink(context: Context, serverBaseUrl: String = "http://127.0.0.1:3000") {
+        companionManager.shareCompanionDownloadLink(context, serverBaseUrl)
+    }
+
+    suspend fun adminUploadCompanion(
+        fileUri: Uri,
+        version: String,
+        notes: String,
+        adminEmail: String
+    ): Boolean {
+        val result = companionManager.uploadAndReplaceCompanion(
+            fileUri = fileUri,
+            version = version,
+            releaseNotes = notes,
+            adminEmail = adminEmail
+        )
+        return if (result.isSuccess) {
+            _userMessage.value = "Companion v$version uploaded and updated successfully!"
+            true
+        } else {
+            _userMessage.value = "Failed to upload companion: ${result.exceptionOrNull()?.message}"
+            false
+        }
+    }
+
     override fun onCleared() {
         super.onCleared()
         typingEngine.stopTyping()
+        usbTypingManager.cleanup()
         hidManager.cleanup()
         authRepository.cleanup()
     }

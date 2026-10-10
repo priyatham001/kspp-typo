@@ -171,4 +171,87 @@ class ExampleUnitTest {
             assertNotNull(stroke)
         }
     }
+
+    @Test
+    fun testUnicodeSmartQuoteNormalization() {
+        // Smart quotes from mobile devices should normalize cleanly
+        val leftSingle = KeyboardMapper.mapChar('‘')
+        assertNotNull(leftSingle)
+        assertEquals(KeyboardDescriptor.KEY_APOSTROPHE, leftSingle!!.keyCode)
+
+        val rightDouble = KeyboardMapper.mapChar('”')
+        assertNotNull(rightDouble)
+        assertEquals(KeyboardDescriptor.KEY_APOSTROPHE, rightDouble!!.keyCode)
+        assertEquals(KeyboardDescriptor.MOD_LEFT_SHIFT, rightDouble.modifier)
+
+        val enDash = KeyboardMapper.mapChar('–')
+        assertNotNull(enDash)
+        assertEquals(KeyboardDescriptor.KEY_MINUS, enDash!!.keyCode)
+
+        val textWithSmartQuotes = "“Hello world!” – said ‘Replica’"
+        val unsupported = KeyboardMapper.findUnsupportedChars(textWithSmartQuotes)
+        assertTrue(unsupported.isEmpty())
+    }
+
+    @Test
+    fun testCleanText_removesOrConvertsUnsupportedChars() {
+        val mixedText = "Code: © 2026 “replica_kspp” – ₹99"
+        val cleaned = KeyboardMapper.cleanText(mixedText)
+        assertTrue(cleaned.contains("\"replica_kspp\""))
+        assertTrue(cleaned.contains("-"))
+        // Unsupported glyphs like © or ₹ should be removed, leaving only valid HID characters
+        for (c in cleaned) {
+            assertNotNull(KeyboardMapper.mapChar(c))
+        }
+    }
+
+    @Test
+    fun testUsbConnectionState_defaultsAndProperties() {
+        val disconnected = com.example.usb.UsbConnectionState.Disconnected("No USB cable")
+        assertEquals("No USB cable", disconnected.reason)
+
+        val synced = com.example.usb.UsbConnectionState.Synced(
+            companionVersion = "1.0.1",
+            protocolVersion = 1,
+            latencyMs = 12L,
+            deviceOs = "Windows"
+        )
+        assertEquals("1.0.1", synced.companionVersion)
+        assertEquals(1, synced.protocolVersion)
+        assertEquals(12L, synced.latencyMs)
+        assertEquals("Windows", synced.deviceOs)
+
+        val incompatible = com.example.usb.UsbConnectionState.Incompatible(
+            companionVersion = "0.9.0",
+            requiredVersion = "1.0.0+",
+            reason = "Protocol mismatch"
+        )
+        assertEquals("0.9.0", incompatible.companionVersion)
+        assertTrue(incompatible.reason.contains("Protocol mismatch"))
+    }
+
+    @Test
+    fun testCompanionInfo_modelDefaults() {
+        val info = com.example.usb.CompanionInfo()
+        assertEquals("1.0.1", info.version)
+        assertEquals(1, info.protocolVersion)
+        assertEquals("replica-companion.exe", info.fileName)
+        assertTrue(info.fileSize > 0)
+        assertNotNull(info.sha256)
+    }
+
+    @Test
+    fun testUsbTypingProgress_progressCalculations() {
+        val typing = com.example.usb.UsbTypingProgress.Typing(
+            currentIndex = 50,
+            totalChars = 100,
+            percent = 0.5f,
+            elapsedMs = 1500L,
+            remainingMs = 1500L
+        )
+        assertEquals(50, typing.currentIndex)
+        assertEquals(100, typing.totalChars)
+        assertEquals(0.5f, typing.percent, 0.001f)
+        assertEquals(1500L, typing.elapsedMs)
+    }
 }

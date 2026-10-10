@@ -40,26 +40,40 @@ data class KeyStroke(
 object KeyboardMapper {
 
     /**
+     * Normalize common unicode variants like smart/curly quotes, en/em dashes, and NBSP
+     * to standard ASCII counterparts.
+     */
+    fun normalizeChar(char: Char): Char = when (char) {
+        '‘', '’' -> '\''
+        '“', '”' -> '"'
+        '–', '—' -> '-'
+        '\u00A0' -> ' ' // Non-breaking space
+        '…' -> '.'
+        else -> char
+    }
+
+    /**
      * Map a single character to a KeyStroke.
      * Returns null if the character is not supported on standard US QWERTY.
      */
     fun mapChar(char: Char): KeyStroke? {
-        return when (char) {
+        val normalized = normalizeChar(char)
+        return when (normalized) {
             // Lowercase letters (a-z)
             in 'a'..'z' -> {
-                val offset = char - 'a'
+                val offset = normalized - 'a'
                 KeyStroke((KEY_A + offset).toByte(), MOD_NONE)
             }
 
             // Uppercase letters (A-Z) -> SHIFT + Letter
             in 'A'..'Z' -> {
-                val offset = char - 'A'
+                val offset = normalized - 'A'
                 KeyStroke((KEY_A + offset).toByte(), MOD_LEFT_SHIFT)
             }
 
             // Numbers 1-9
             in '1'..'9' -> {
-                val offset = char - '1'
+                val offset = normalized - '1'
                 KeyStroke((KEY_1 + offset).toByte(), MOD_NONE)
             }
             '0' -> KeyStroke(KEY_0, MOD_NONE)
@@ -115,6 +129,46 @@ object KeyboardMapper {
 
             else -> null
         }
+    }
+
+    /**
+     * Scans text and identifies any unsupported characters along with their index.
+     */
+    fun findUnsupportedChars(text: String): List<Pair<Int, Char>> {
+        val unsupported = mutableListOf<Pair<Int, Char>>()
+        text.forEachIndexed { index, char ->
+            if (char == '\r') return@forEachIndexed
+            if (mapChar(char) == null) {
+                unsupported.add(index to char)
+            }
+        }
+        return unsupported
+    }
+
+    /**
+     * Replaces unsupported characters with standard equivalents or removes them.
+     */
+    fun cleanText(text: String): String {
+        val sb = StringBuilder()
+        for (char in text) {
+            if (char == '\r') continue
+            val normalized = normalizeChar(char)
+            if (mapChar(normalized) != null) {
+                sb.append(normalized)
+            } else {
+                // Approximate or ignore
+                when (char) {
+                    '‘', '’' -> sb.append('\'')
+                    '“', '”' -> sb.append('"')
+                    '–', '—' -> sb.append('-')
+                    '•' -> sb.append('*')
+                    '«', '»' -> sb.append('"')
+                    '‹', '›' -> sb.append('\'')
+                    else -> {} // Drop unsupported glyph
+                }
+            }
+        }
+        return sb.toString()
     }
 
     /**

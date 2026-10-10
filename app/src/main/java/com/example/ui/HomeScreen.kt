@@ -39,6 +39,14 @@ import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.RestartAlt
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.ui.platform.LocalContext
+import android.content.ClipboardManager
+import android.content.Context
+import com.example.keyboard.KeyboardMapper
+import com.example.storage.ScriptEntity
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -85,6 +93,7 @@ fun HomeScreen(
     onNavigateToScripts: () -> Unit,
     onNavigateToBluetooth: () -> Unit,
     onRequestPermissions: (() -> Unit)? = null,
+    onNavigateToUsb: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
@@ -99,6 +108,8 @@ fun HomeScreen(
     var saveNameInput by remember(editorTitle) { mutableStateOf(editorTitle) }
     var previousTextForUndo by remember { mutableStateOf<String?>(null) }
 
+    val context = LocalContext.current
+    val allScripts by viewModel.allScripts.collectAsState()
     val scrollState = rememberScrollState()
     val isApproved = userProfile?.hasActiveAccess == true && serviceControl.isOperational
 
@@ -230,6 +241,60 @@ fun HomeScreen(
             onLockClick = { viewModel.lockNow() }
         )
 
+        // USB Typing Quick Access Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onNavigateToUsb?.invoke() }
+                .testTag("home_usb_typing_shortcut_card"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(14.dp),
+            border = CardDefaults.outlinedCardBorder()
+        ) {
+            Row(
+                modifier = Modifier.padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Box(
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(MaterialTheme.colorScheme.primaryContainer),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Usb,
+                            contentDescription = "USB Typing",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            text = "USB Cable Typing Mode",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Connect phone to PC with USB cable & Windows companion",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Text(
+                    text = "OPEN →",
+                    fontWeight = FontWeight.ExtraBold,
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+        }
+
         // Account approval / Service warning banner if not approved
         if (!isApproved) {
             Card(
@@ -323,12 +388,45 @@ fun HomeScreen(
                     }
 
                     val lines = if (editorText.isEmpty()) 0 else editorText.count { it == '\n' } + 1
+                    val words = if (editorText.isBlank()) 0 else editorText.trim().split(Regex("\\s+")).size
+                    val estSecs = (editorText.length * typingDelayMs) / 1000f
                     Text(
-                        text = "${editorText.length} chars  ($lines lines)",
+                        text = "${editorText.length} chars • $words words • $lines lines (Est: ${String.format("%.1f", estSecs)}s)",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                val unsupportedChars = remember(editorText) { KeyboardMapper.findUnsupportedChars(editorText) }
+                if (unsupportedChars.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = StatusYellow.copy(alpha = 0.15f)),
+                        shape = RoundedCornerShape(8.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, StatusYellow.copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 10.dp, vertical = 6.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "⚠️ ${unsupportedChars.size} unsupported character(s) detected",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            TextButton(
+                                onClick = { viewModel.cleanCurrentEditorText() }
+                            ) {
+                                Text("AUTO-CLEAN", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -416,6 +514,29 @@ fun HomeScreen(
                         Icon(Icons.Default.FolderOpen, contentDescription = "Saved", modifier = Modifier.size(15.dp))
                         Spacer(modifier = Modifier.width(4.dp))
                         Text("Saved", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                val clip = clipboard.primaryClip
+                                if (clip != null && clip.itemCount > 0) {
+                                    val pasteText = clip.getItemAt(0).coerceToText(context).toString()
+                                    if (pasteText.isNotEmpty()) {
+                                        viewModel.updateEditorText(pasteText)
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("paste_text_button"),
+                        shape = RoundedCornerShape(10.dp)
+                    ) {
+                        Icon(Icons.Default.ContentPaste, contentDescription = "Paste", modifier = Modifier.size(15.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Paste", fontSize = 12.sp)
                     }
 
                     OutlinedButton(
@@ -601,7 +722,9 @@ fun HomeScreen(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                Text("Streaming keystrokes...", fontSize = 12.sp, color = StatusGreen, fontWeight = FontWeight.Bold)
+                                val elapsedSec = state.elapsedMs / 1000
+                                val remSec = state.remainingMs / 1000
+                                Text("Streaming... (Elapsed: ${elapsedSec}s • Rem: ${remSec}s)", fontSize = 12.sp, color = StatusGreen, fontWeight = FontWeight.Bold)
                                 Text("${state.currentIndex} / ${state.totalChars} (${String.format("%.1f", state.percent)}%)", fontSize = 12.sp, fontFamily = FontFamily.Monospace)
                             }
                             Spacer(modifier = Modifier.height(6.dp))
@@ -690,6 +813,20 @@ fun HomeScreen(
                             }
 
                             Button(
+                                onClick = { viewModel.restartTyping() },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("restart_typing_button"),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Icon(Icons.Default.RestartAlt, contentDescription = "Restart")
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text("RESTART", fontWeight = FontWeight.Bold)
+                            }
+
+                            Button(
                                 onClick = { viewModel.stopTyping() },
                                 modifier = Modifier
                                     .weight(1f)
@@ -704,22 +841,41 @@ fun HomeScreen(
                             }
                         }
                         else -> {
-                            Button(
-                                onClick = { viewModel.startTyping() },
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .height(50.dp)
-                                    .testTag("start_typing_button"),
-                                enabled = isApproved,
-                                colors = ButtonDefaults.buttonColors(
-                                    containerColor = MaterialTheme.colorScheme.primary,
-                                    disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                ),
-                                shape = RoundedCornerShape(10.dp)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
-                                Icon(Icons.Default.PlayArrow, contentDescription = "Start")
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("START AUTO-TYPING", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Button(
+                                    onClick = { viewModel.startTyping() },
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(50.dp)
+                                        .testTag("start_typing_button"),
+                                    enabled = isApproved,
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary,
+                                        disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                    ),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Icon(Icons.Default.PlayArrow, contentDescription = "Start")
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("START AUTO-TYPING", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+
+                                if (typingState is TypingState.Completed || typingState is TypingState.Stopped) {
+                                    FilledTonalButton(
+                                        onClick = { viewModel.restartTyping() },
+                                        modifier = Modifier
+                                            .height(50.dp)
+                                            .testTag("restart_from_beginning_button"),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(Icons.Default.RestartAlt, contentDescription = "Restart")
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("RESTART", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                    }
+                                }
                             }
                         }
                     }

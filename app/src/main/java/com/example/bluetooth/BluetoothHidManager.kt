@@ -50,7 +50,8 @@ class BluetoothHidManager(private val context: Context) {
     val bluetoothAdapter: BluetoothAdapter? = bluetoothManager?.adapter
 
     private var hidDevice: BluetoothHidDevice? = null
-    private var isAppRegistered = false
+    private val _isHidRegistered = MutableStateFlow(false)
+    val isHidRegistered: StateFlow<Boolean> = _isHidRegistered.asStateFlow()
 
     private val _connectionState = MutableStateFlow<HidConnectionState>(HidConnectionState.Disconnected)
     val connectionState: StateFlow<HidConnectionState> = _connectionState.asStateFlow()
@@ -67,7 +68,7 @@ class BluetoothHidManager(private val context: Context) {
         override fun onAppStatusChanged(pluggedDevice: BluetoothDevice?, registered: Boolean) {
             super.onAppStatusChanged(pluggedDevice, registered)
             Log.d(tag, "onAppStatusChanged: registered=$registered, pluggedDevice=${pluggedDevice?.name}")
-            isAppRegistered = registered
+            _isHidRegistered.value = registered
             if (registered) {
                 if (pluggedDevice != null) {
                     val name = getSafeDeviceName(pluggedDevice)
@@ -163,7 +164,7 @@ class BluetoothHidManager(private val context: Context) {
             if (profile == BluetoothProfile.HID_DEVICE) {
                 Log.d(tag, "HID_DEVICE profile proxy disconnected")
                 hidDevice = null
-                isAppRegistered = false
+                _isHidRegistered.value = false
                 _connectionState.value = HidConnectionState.Disconnected
             }
         }
@@ -245,7 +246,7 @@ class BluetoothHidManager(private val context: Context) {
                     "Error requesting Bluetooth HID profile: ${e.message}"
                 )
             }
-        } else if (!isAppRegistered) {
+        } else if (!_isHidRegistered.value) {
             registerHidApp()
         }
     }
@@ -282,9 +283,9 @@ class BluetoothHidManager(private val context: Context) {
         }
 
         val sdp = BluetoothHidDeviceAppSdpSettings(
-            "PSK BT Auto Keyboard",
-            "Bluetooth HID Keyboard Emulator for CodeTantra & Windows",
-            "PSK",
+            "replica_kspp Keyboard",
+            "Bluetooth HID Keyboard Peripheral",
+            "replica_kspp",
             BluetoothHidDevice.SUBCLASS1_KEYBOARD,
             KeyboardDescriptor.REPORT_DESCRIPTOR
         )
@@ -403,6 +404,75 @@ class BluetoothHidManager(private val context: Context) {
         }
     }
 
+    fun openBluetoothSettings(ctx: Context) {
+        try {
+            val intent = Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS).apply {
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            ctx.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to open Bluetooth settings", e)
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    fun requestDiscoverability(ctx: Context, durationSeconds: Int = 120) {
+        try {
+            val intent = Intent(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE).apply {
+                putExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, durationSeconds)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK
+            }
+            ctx.startActivity(intent)
+        } catch (e: Exception) {
+            Log.e(tag, "Failed to request discoverability", e)
+        }
+    }
+
+    fun getDiagnosticsSummary(): String {
+        val adapter = bluetoothAdapter
+        val isBtOn = adapter?.isEnabled == true
+        val target = _connectedDevice.value
+        val targetName = target?.let { getSafeDeviceName(it) } ?: "None"
+        val targetAddress = target?.address ?: "N/A"
+        val stateName = when (val s = _connectionState.value) {
+            is HidConnectionState.Connected -> "Connected (to ${s.deviceName})"
+            is HidConnectionState.Connecting -> "Connecting (${s.deviceName ?: "host"})"
+            is HidConnectionState.Disconnected -> if (_isHidRegistered.value) "Ready (Profile Registered, Waiting for Host)" else "Disconnected"
+            is HidConnectionState.Registering -> "Registering HID Application Profile"
+            is HidConnectionState.PermissionRequired -> "Permission Required"
+            is HidConnectionState.BluetoothDisabled -> "Bluetooth Disabled"
+            is HidConnectionState.Unavailable -> "Bluetooth Hardware Unavailable"
+            is HidConnectionState.NotSupported -> "HID Not Supported: ${s.reason}"
+            is HidConnectionState.Error -> "Error: ${s.message}"
+        }
+
+        return buildString {
+            appendLine("=== replica_kspp Bluetooth HID Diagnostics ===")
+            appendLine("App: replica_kspp (v1.0.0)")
+            appendLine("Android OS: Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT})")
+            appendLine("Device: ${Build.MANUFACTURER} ${Build.MODEL} (${Build.DEVICE})")
+            appendLine()
+            appendLine("[Bluetooth Hardware]")
+            appendLine("Adapter Available: ${adapter != null}")
+            appendLine("Bluetooth Enabled: $isBtOn")
+            appendLine("Permissions Granted: ${hasBluetoothPermissions()}")
+            appendLine()
+            appendLine("[HID Device Profile (Profile 19)]")
+            appendLine("Profile Proxy Attached: ${hidDevice != null}")
+            appendLine("HID App Registered: ${_isHidRegistered.value}")
+            appendLine("SDP Service Name: replica_kspp Keyboard")
+            appendLine("Report Descriptor: 8-byte Standard USB/BT Boot Keyboard (Report ID 1)")
+            appendLine("Key Rollover: 6-key array")
+            appendLine()
+            appendLine("[Connection Status]")
+            appendLine("Current State: $stateName")
+            appendLine("Connected Host: $targetName")
+            appendLine("Host Address: $targetAddress")
+            appendLine("Paired Devices Count: ${_pairedDevices.value.size}")
+            appendLine("==============================================")
+        }
+    }
+
     fun cleanup() {
         try {
             context.unregisterReceiver(bluetoothReceiver)
@@ -414,6 +484,6 @@ class BluetoothHidManager(private val context: Context) {
         } catch (_: Exception) {}
 
         hidDevice = null
-        isAppRegistered = false
+        _isHidRegistered.value = false
     }
 }

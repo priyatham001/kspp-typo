@@ -1,19 +1,64 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 
 const APK_PATHS = [
   path.join(__dirname, 'app/build/outputs/apk/debug/app-debug.apk'),
   path.join(__dirname, '.build-outputs/app-debug.apk')
 ];
 
+const COMPANION_PATHS = [
+  path.join(__dirname, 'companion/replica-companion.exe'),
+  path.join(__dirname, 'public/downloads/replica-companion.exe'),
+  path.join(__dirname, 'app/src/main/assets/companion/replica-companion.exe')
+];
+
+const COMPANION_META_FILE = path.join(__dirname, 'companion_meta.json');
+
+function getCompanionMeta() {
+  if (fs.existsSync(COMPANION_META_FILE)) {
+    try {
+      return JSON.parse(fs.readFileSync(COMPANION_META_FILE, 'utf8'));
+    } catch (_) {}
+  }
+  return {
+    version: '1.0.0',
+    protocolVersion: 1,
+    minAppVersion: '1.0.0',
+    fileName: 'replica-companion.exe',
+    uploadedBy: 'admin',
+    lastUpdated: new Date().toISOString(),
+    releaseNotes: 'Official Windows Companion for USB typing into Windows applications.'
+  };
+}
+
+function saveCompanionMeta(meta) {
+  try {
+    fs.writeFileSync(COMPANION_META_FILE, JSON.stringify(meta, null, 2), 'utf8');
+  } catch (_) {}
+}
+
 function getApkPath() {
   for (const p of APK_PATHS) {
     if (fs.existsSync(p)) return p;
   }
   return null;
+}
+
+function getCompanionPath() {
+  for (const p of COMPANION_PATHS) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+function getFileSha256(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const buffer = fs.readFileSync(filePath);
+  return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
 const server = http.createServer((req, res) => {
@@ -62,6 +107,105 @@ const server = http.createServer((req, res) => {
 
     const stream = fs.createReadStream(apkPath);
     stream.pipe(res);
+    return;
+  }
+
+  if (pathname === '/download/replica-companion.exe' || pathname === '/replica-companion.exe' || pathname === '/api/companion/download') {
+    const compPath = getCompanionPath();
+    if (!compPath) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('Windows companion program not found. Please contact the administrator.');
+      return;
+    }
+
+    const stat = fs.statSync(compPath);
+    res.writeHead(200, {
+      'Content-Type': 'application/vnd.microsoft.portable-executable',
+      'Content-Disposition': 'attachment; filename="replica-companion.exe"',
+      'Content-Length': stat.size
+    });
+
+    const stream = fs.createReadStream(compPath);
+    stream.pipe(res);
+    return;
+  }
+
+  if (pathname === '/api/companion/info') {
+    const compPath = getCompanionPath();
+    const meta = getCompanionMeta();
+    const stats = compPath ? fs.statSync(compPath) : null;
+    const sha = compPath ? getFileSha256(compPath) : null;
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      status: 'ok',
+      version: meta.version || '1.0.0',
+      protocolVersion: meta.protocolVersion || 1,
+      minAppVersion: meta.minAppVersion || '1.0.0',
+      fileName: meta.fileName || 'replica-companion.exe',
+      fileSize: stats ? stats.size : 0,
+      sha256: sha,
+      downloadUrl: '/download/replica-companion.exe',
+      uploadedBy: meta.uploadedBy || 'admin',
+      lastUpdated: meta.lastUpdated || new Date().toISOString(),
+      releaseNotes: meta.releaseNotes || 'Official Windows companion program for USB typing into Windows applications.'
+    }));
+    return;
+  }
+
+  if (pathname === '/api/companion/upload' && req.method === 'POST') {
+    const chunks = [];
+    req.on('data', chunk => chunks.push(chunk));
+    req.on('end', () => {
+      const buffer = Buffer.concat(chunks);
+      if (buffer.length === 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'error', message: 'Empty file payload' }));
+        return;
+      }
+
+      const version = req.headers['x-companion-version'] || '1.0.1';
+      const uploader = req.headers['x-uploader-email'] || 'admin';
+      const notes = req.headers['x-release-notes'] || 'Updated Windows Companion';
+
+      // Save to companion directory and public downloads
+      const target1 = path.join(__dirname, 'companion/replica-companion.exe');
+      const target2 = path.join(__dirname, 'public/downloads/replica-companion.exe');
+      const target3 = path.join(__dirname, 'app/src/main/assets/companion/replica-companion.exe');
+
+      try {
+        fs.mkdirSync(path.dirname(target1), { recursive: true });
+        fs.writeFileSync(target1, buffer);
+        fs.mkdirSync(path.dirname(target2), { recursive: true });
+        fs.writeFileSync(target2, buffer);
+        fs.mkdirSync(path.dirname(target3), { recursive: true });
+        fs.writeFileSync(target3, buffer);
+
+        const sha = crypto.createHash('sha256').update(buffer).digest('hex');
+        const meta = {
+          version: version,
+          protocolVersion: 1,
+          minAppVersion: '1.0.0',
+          fileName: 'replica-companion.exe',
+          fileSize: buffer.length,
+          sha256: sha,
+          uploadedBy: uploader,
+          lastUpdated: new Date().toISOString(),
+          releaseNotes: notes
+        };
+        saveCompanionMeta(meta);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          status: 'ok',
+          message: 'Companion uploaded and updated successfully',
+          meta: meta
+        }));
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ status: 'error', message: err.message }));
+      }
+    });
     return;
   }
 

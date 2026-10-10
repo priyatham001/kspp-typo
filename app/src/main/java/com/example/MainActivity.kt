@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -22,11 +23,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Keyboard
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material.icons.outlined.TextFields
@@ -60,8 +63,12 @@ import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.example.auth.UserProfile
 import com.example.storage.AppThemeMode
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.outlined.Usb
+import com.example.ui.UsbTypingScreen
 import com.example.ui.AccessDeniedReason
 import com.example.ui.AdminDashboardScreen
+import com.example.ui.HidInfoScreen
 import com.example.ui.HomeScreen
 import com.example.ui.KeyboardTestScreen
 import com.example.ui.LockScreen
@@ -74,7 +81,7 @@ import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.MyApplicationTheme
 
 enum class ScreenTab {
-    EDITOR, SCRIPTS, TEST, SETTINGS, ADMIN
+    EDITOR, SCRIPTS, USB_TYPING, TEST, HID_INFO, SETTINGS, ADMIN
 }
 
 class MainActivity : ComponentActivity() {
@@ -257,7 +264,11 @@ class MainActivity : ComponentActivity() {
                         }
                         else -> {
                             // 5. Approved REPLICA Application
-                            Scaffold(
+                                BackHandler(enabled = currentTab != ScreenTab.EDITOR) {
+                                    currentTab = ScreenTab.EDITOR
+                                }
+
+                                Scaffold(
                                 modifier = Modifier.fillMaxSize(),
                                 contentWindowInsets = WindowInsets.safeDrawing,
                                 topBar = {
@@ -345,6 +356,19 @@ class MainActivity : ComponentActivity() {
                                         )
 
                                         NavigationBarItem(
+                                            selected = currentTab == ScreenTab.USB_TYPING,
+                                            onClick = { currentTab = ScreenTab.USB_TYPING },
+                                            icon = {
+                                                Icon(
+                                                    if (currentTab == ScreenTab.USB_TYPING) Icons.Filled.Usb else Icons.Outlined.Usb,
+                                                    contentDescription = "USB Typing"
+                                                )
+                                            },
+                                            label = { Text("USB") },
+                                            modifier = Modifier.testTag("nav_tab_usb")
+                                        )
+
+                                        NavigationBarItem(
                                             selected = currentTab == ScreenTab.TEST,
                                             onClick = { currentTab = ScreenTab.TEST },
                                             icon = {
@@ -355,6 +379,19 @@ class MainActivity : ComponentActivity() {
                                             },
                                             label = { Text("Test") },
                                             modifier = Modifier.testTag("nav_tab_test")
+                                        )
+
+                                        NavigationBarItem(
+                                            selected = currentTab == ScreenTab.HID_INFO,
+                                            onClick = { currentTab = ScreenTab.HID_INFO },
+                                            icon = {
+                                                Icon(
+                                                    if (currentTab == ScreenTab.HID_INFO) Icons.Filled.Info else Icons.Outlined.Info,
+                                                    contentDescription = "HID Info"
+                                                )
+                                            },
+                                            label = { Text("HID Info") },
+                                            modifier = Modifier.testTag("nav_tab_hid_info")
                                         )
 
                                         NavigationBarItem(
@@ -382,14 +419,21 @@ class MainActivity : ComponentActivity() {
                                         ScreenTab.EDITOR -> HomeScreen(
                                             viewModel = viewModel,
                                             onNavigateToScripts = { currentTab = ScreenTab.SCRIPTS },
-                                            onNavigateToBluetooth = { currentTab = ScreenTab.SETTINGS },
-                                            onRequestPermissions = requestBluetoothPermissions
+                                            onNavigateToBluetooth = { currentTab = ScreenTab.HID_INFO },
+                                            onRequestPermissions = requestBluetoothPermissions,
+                                            onNavigateToUsb = { currentTab = ScreenTab.USB_TYPING }
                                         )
                                         ScreenTab.SCRIPTS -> ScriptsScreen(
                                             viewModel = viewModel,
                                             onScriptLoaded = { currentTab = ScreenTab.EDITOR }
                                         )
+                                        ScreenTab.USB_TYPING -> UsbTypingScreen(
+                                            viewModel = viewModel
+                                        )
                                         ScreenTab.TEST -> KeyboardTestScreen(
+                                            viewModel = viewModel
+                                        )
+                                        ScreenTab.HID_INFO -> HidInfoScreen(
                                             viewModel = viewModel
                                         )
                                         ScreenTab.SETTINGS -> SettingsScreen(

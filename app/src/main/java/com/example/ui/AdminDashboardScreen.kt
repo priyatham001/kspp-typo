@@ -1,5 +1,23 @@
 package com.example.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.net.Uri
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Laptop
+import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.PlayArrow
+import com.example.usb.CompanionInfo
+import com.example.usb.UsbConnectionState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,6 +53,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
@@ -156,6 +175,11 @@ fun AdminDashboardScreen(
                     onClick = { selectedTabIndex = 4 },
                     text = { Text("Logs") }
                 )
+                Tab(
+                    selected = selectedTabIndex == 5,
+                    onClick = { selectedTabIndex = 5 },
+                    text = { Text("Companion (.exe)") }
+                )
             }
 
             Box(
@@ -205,6 +229,7 @@ fun AdminDashboardScreen(
                         }
                     )
                     4 -> AuditLogsTab(auditLogs = auditLogs)
+                    5 -> WindowsCompanionTab(viewModel = viewModel, adminEmail = adminEmail)
                 }
             }
         }
@@ -1012,3 +1037,409 @@ fun AuditLogsTab(auditLogs: List<AuditLog>) {
         }
     }
 }
+
+@Composable
+fun WindowsCompanionTab(
+    viewModel: MainViewModel,
+    adminEmail: String
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val companionInfo by viewModel.companionInfo.collectAsState()
+    val usbConnectionState by viewModel.usbConnectionState.collectAsState()
+
+    var showUploadDialog by remember { mutableStateOf(false) }
+    var selectedFileUri by remember { mutableStateOf<Uri?>(null) }
+    var newVersionInput by remember { mutableStateOf("1.0.2") }
+    var newNotesInput by remember { mutableStateOf("Updated Windows companion with USB high-speed typing support.") }
+    var isUploading by remember { mutableStateOf(false) }
+    var isTestingConnection by remember { mutableStateOf(false) }
+
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            selectedFileUri = uri
+            showUploadDialog = true
+        }
+    }
+
+    val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
+    val lastUpdatedDate = remember(companionInfo.lastUpdated) {
+        dateFormat.format(Date(companionInfo.lastUpdated))
+    }
+
+    LazyColumn(
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        modifier = Modifier.fillMaxSize()
+    ) {
+        // Header
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Laptop, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Windows Companion Manager",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Upload, update, replace, and distribute the Windows companion .exe to normal users for USB auto-typing.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+
+        // Active Version Details Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Current Active Companion",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(StatusGreen.copy(alpha = 0.15f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            Text(
+                                text = "v${companionInfo.version}",
+                                fontWeight = FontWeight.ExtraBold,
+                                color = StatusGreen,
+                                fontFamily = FontFamily.Monospace,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    // Metadata details
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("File Name:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(companionInfo.fileName, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, fontFamily = FontFamily.Monospace)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("File Size:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        val sizeKb = (companionInfo.fileSize / 1024f)
+                        Text("%.1f KB (%d bytes)".format(sizeKb, companionInfo.fileSize), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Protocol Version:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("v${companionInfo.protocolVersion} (Compatible)", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Last Updated:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(lastUpdatedDate, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text("Uploaded By:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(companionInfo.uploadedBy, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    // Checksum
+                    companionInfo.sha256?.let { sha ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                                .padding(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("SHA-256 Checksum", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                IconButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        clipboard.setPrimaryClip(ClipData.newPlainText("SHA256", sha))
+                                        Toast.makeText(context, "SHA256 copied", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(Icons.Default.ContentCopy, contentDescription = "Copy", modifier = Modifier.size(14.dp))
+                                }
+                            }
+                            Text(
+                                text = sha,
+                                fontSize = 10.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                lineHeight = 14.sp
+                            )
+                        }
+                    }
+
+                    if (companionInfo.releaseNotes.isNotBlank()) {
+                        Text(
+                            text = "Release Notes: ${companionInfo.releaseNotes}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
+
+        // Admin Action Controls Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Admin Companion Actions",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 15.sp
+                    )
+
+                    // 1. Upload / Replace .exe
+                    Button(
+                        onClick = { filePickerLauncher.launch("*/*") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_upload_companion_btn"),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Icon(Icons.Default.Upload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Upload / Replace Companion (.exe)", fontWeight = FontWeight.Bold)
+                    }
+
+                    // 2. Share .exe directly to users
+                    OutlinedButton(
+                        onClick = { viewModel.shareCompanionFile(context) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_share_companion_exe_btn")
+                    ) {
+                        Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Share Companion (.exe) via Share Sheet")
+                    }
+
+                    // 3. Share Download Link
+                    OutlinedButton(
+                        onClick = { viewModel.shareCompanionDownloadLink(context, "http://127.0.0.1:3000") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .testTag("admin_share_companion_link_btn")
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Share Companion Download Link")
+                    }
+                }
+            }
+        }
+
+        // Connection Test & Diagnostics Simulator Card
+        item {
+            Card(
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                shape = RoundedCornerShape(16.dp),
+                border = CardDefaults.outlinedCardBorder(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "Diagnostics & Handshake Verification",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = "Verify whether the Windows companion is responding on the USB ADB port (8989).",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = when (val s = usbConnectionState) {
+                                is UsbConnectionState.Synced -> "Status: SYNCED (Latency: ${s.latencyMs}ms)"
+                                is UsbConnectionState.Connecting -> "Status: PROBING..."
+                                is UsbConnectionState.Connected -> "Status: CONNECTED (Verifying)"
+                                is UsbConnectionState.Incompatible -> "Status: INCOMPATIBLE (${s.reason})"
+                                is UsbConnectionState.Error -> "Status: ERROR (${s.message})"
+                                is UsbConnectionState.Disconnected -> "Status: DISCONNECTED (${s.reason})"
+                            },
+                            fontSize = 12.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = when (usbConnectionState) {
+                                is UsbConnectionState.Synced -> StatusGreen
+                                is UsbConnectionState.Connecting, is UsbConnectionState.Connected -> StatusYellow
+                                is UsbConnectionState.Incompatible -> MaterialTheme.colorScheme.error
+                                else -> StatusRed
+                            }
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            scope.launch {
+                                isTestingConnection = true
+                                viewModel.checkUsbConnection()
+                                isTestingConnection = false
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                    ) {
+                        if (isTestingConnection) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(16.dp),
+                                color = MaterialTheme.colorScheme.onSecondary,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Testing...")
+                        } else {
+                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Test Handshake & Ping Port 8989")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Dialog: Upload / Replace Companion
+    if (showUploadDialog && selectedFileUri != null) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isUploading) {
+                    showUploadDialog = false
+                    selectedFileUri = null
+                }
+            },
+            title = { Text("Upload & Replace Companion (.exe)") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "Selected file: ${selectedFileUri?.lastPathSegment ?: "companion.exe"}",
+                        fontSize = 12.sp,
+                        fontFamily = FontFamily.Monospace,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+
+                    OutlinedTextField(
+                        value = newVersionInput,
+                        onValueChange = { newVersionInput = it },
+                        label = { Text("Companion Version") },
+                        placeholder = { Text("e.g. 1.0.2") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = newNotesInput,
+                        onValueChange = { newNotesInput = it },
+                        label = { Text("Release Notes") },
+                        placeholder = { Text("Describe changes...") },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (isUploading) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Uploading companion file...", fontSize = 12.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val uri = selectedFileUri ?: return@Button
+                        scope.launch {
+                            isUploading = true
+                            val ok = viewModel.adminUploadCompanion(
+                                fileUri = uri,
+                                version = newVersionInput,
+                                notes = newNotesInput,
+                                adminEmail = adminEmail
+                            )
+                            isUploading = false
+                            if (ok) {
+                                showUploadDialog = false
+                                selectedFileUri = null
+                            }
+                        }
+                    },
+                    enabled = !isUploading && newVersionInput.isNotBlank()
+                ) {
+                    Text("Upload & Update")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showUploadDialog = false
+                        selectedFileUri = null
+                    },
+                    enabled = !isUploading
+                ) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+}
+

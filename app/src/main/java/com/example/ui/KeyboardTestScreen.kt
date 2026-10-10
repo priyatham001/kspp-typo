@@ -143,62 +143,94 @@ fun KeyboardTestScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Button(
-                    onClick = {
-                        lastSentKey = "ALL KEYS SEQUENCE"
-                        viewModel.runTestAllKeys()
-                    },
-                    enabled = !isTestingAllKeys && connectionState is HidConnectionState.Connected,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp)
-                        .testTag("test_all_keys_button"),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    if (isTestingAllKeys) {
-                        CircularProgressIndicator(
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
+                    Button(
+                        onClick = {
+                            lastSentKey = "ALL KEYS SEQUENCE"
+                            viewModel.runTestAllKeys()
+                        },
+                        enabled = !isTestingAllKeys && connectionState is HidConnectionState.Connected,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(48.dp)
+                            .testTag("test_all_keys_button"),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
                         )
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Typing Test Sequence...")
-                    } else {
-                        Icon(Icons.Default.PlayArrow, contentDescription = "Play", modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("TEST ALL KEYS", fontWeight = FontWeight.Bold)
+                    ) {
+                        if (isTestingAllKeys) {
+                            CircularProgressIndicator(
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                modifier = Modifier.size(20.dp),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Typing Sequence...")
+                        } else {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Play", modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("TEST ALL KEYS", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    if (isTestingAllKeys) {
+                        androidx.compose.material3.OutlinedButton(
+                            onClick = { viewModel.cancelTestAllKeys() },
+                            modifier = Modifier.height(48.dp),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = com.example.ui.theme.ErrorRed)
+                        ) {
+                            Text("CANCEL", fontWeight = FontWeight.Bold)
+                        }
                     }
                 }
             }
         }
 
-        // Realtime Event Display
-        Row(
+        // Realtime Event Display with Verification Notice
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)),
+            shape = RoundedCornerShape(10.dp)
         ) {
-            Text(
-                text = "Last Key Event:",
-                style = MaterialTheme.typography.titleSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Box(
-                modifier = Modifier
-                    .clip(RoundedCornerShape(6.dp))
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .padding(horizontal = 12.dp, vertical = 4.dp)
-            ) {
-                Text(
-                    text = lastSentKey,
-                    style = MaterialTheme.typography.labelLarge,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+            Column(modifier = Modifier.padding(12.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "Last Key Event:",
+                        style = MaterialTheme.typography.titleSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant)
+                            .padding(horizontal = 12.dp, vertical = 4.dp)
+                    ) {
+                        Text(
+                            text = lastSentKey,
+                            style = MaterialTheme.typography.labelLarge,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+                if (lastSentKey != "None") {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "● Report Sent via Bluetooth (Host unverified - verify characters appear on PC screen)",
+                        fontSize = 10.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -286,6 +318,39 @@ fun KeyboardTestScreen(
             KeyButton(label = "ESC", width = 64.dp, onClick = {
                 lastSentKey = "ESC"
                 viewModel.sendTestKey(KeyboardDescriptor.KEY_ESC)
+            })
+        }
+
+        // Section 5: Modifiers and Shortcuts
+        KeySectionHeader("Modifier Keys & Shortcuts")
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            KeyButton(label = "Ctrl+C", width = 80.dp, onClick = {
+                lastSentKey = "Ctrl+C (Copy)"
+                viewModel.sendTestKey(KeyboardDescriptor.KEY_C, KeyboardDescriptor.MOD_LEFT_CTRL)
+            })
+            KeyButton(label = "Ctrl+V", width = 80.dp, onClick = {
+                lastSentKey = "Ctrl+V (Paste)"
+                viewModel.sendTestKey(KeyboardDescriptor.KEY_V, KeyboardDescriptor.MOD_LEFT_CTRL)
+            })
+            KeyButton(label = "Ctrl+Z", width = 80.dp, onClick = {
+                lastSentKey = "Ctrl+Z (Undo)"
+                viewModel.sendTestKey(KeyboardDescriptor.KEY_Z, KeyboardDescriptor.MOD_LEFT_CTRL)
+            })
+            KeyButton(label = "Ctrl+A", width = 80.dp, onClick = {
+                lastSentKey = "Ctrl+A (Select All)"
+                viewModel.sendTestKey(KeyboardDescriptor.KEY_A, KeyboardDescriptor.MOD_LEFT_CTRL)
+            })
+            KeyButton(label = "GUI/Win", width = 84.dp, onClick = {
+                lastSentKey = "Windows / GUI Key"
+                viewModel.sendTestKey(KeyboardDescriptor.KEY_NONE, KeyboardDescriptor.MOD_LEFT_GUI)
+            })
+            KeyButton(label = "Alt+Tab", width = 84.dp, onClick = {
+                lastSentKey = "Alt+Tab (Switch App)"
+                viewModel.sendTestKey(KeyboardDescriptor.KEY_TAB, KeyboardDescriptor.MOD_LEFT_ALT)
             })
         }
 

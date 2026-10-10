@@ -18,9 +18,15 @@ import kotlin.math.min
 
 sealed class TypingState {
     data object Idle : TypingState()
-    data class Typing(val currentIndex: Int, val totalChars: Int, val percent: Float) : TypingState()
+    data class Typing(
+        val currentIndex: Int,
+        val totalChars: Int,
+        val percent: Float,
+        val elapsedMs: Long = 0L,
+        val remainingMs: Long = 0L
+    ) : TypingState()
     data class Paused(val currentIndex: Int, val totalChars: Int, val percent: Float) : TypingState()
-    data class Completed(val totalChars: Int) : TypingState()
+    data class Completed(val totalChars: Int, val durationMs: Long = 0L) : TypingState()
     data class Stopped(val stoppedAtIndex: Int, val totalChars: Int) : TypingState()
     data class Error(val message: String, val atIndex: Int = 0) : TypingState()
 }
@@ -45,6 +51,7 @@ class TypingEngine(
     private var fullText: String = ""
     private var currentIndex: Int = 0
     private var isPaused: Boolean = false
+    private var startTimeMs: Long = 0L
 
     fun setDelay(delayMs: Long) {
         _currentDelayMs.value = delayMs.coerceIn(0L, 500L)
@@ -71,8 +78,18 @@ class TypingEngine(
         fullText = text
         currentIndex = 0
         isPaused = false
+        startTimeMs = System.currentTimeMillis()
 
         launchTypingLoop()
+    }
+
+    /**
+     * Restart typing the current text from index 0.
+     */
+    fun restartTyping(customDelayMs: Long? = null) {
+        if (fullText.isNotEmpty()) {
+            startTyping(fullText, customDelayMs)
+        }
     }
 
     /**
@@ -121,6 +138,7 @@ class TypingEngine(
         if (resetState) {
             val total = fullText.length
             _typingState.value = TypingState.Stopped(currentIndex, total)
+            startTimeMs = 0L
         }
     }
 
@@ -131,6 +149,7 @@ class TypingEngine(
         stopTyping(resetState = false)
         currentIndex = 0
         fullText = ""
+        startTimeMs = 0L
         _typingState.value = TypingState.Idle
     }
 
@@ -230,12 +249,16 @@ class TypingEngine(
 
                     // Update live progress
                     val pct = (currentIndex.toFloat() / total) * 100f
-                    _typingState.value = TypingState.Typing(currentIndex, total, pct)
+                    val elapsed = (System.currentTimeMillis() - startTimeMs).coerceAtLeast(0L)
+                    val remainingMs = ((total - currentIndex) * _currentDelayMs.value).coerceAtLeast(0L)
+                    _typingState.value = TypingState.Typing(currentIndex, total, pct, elapsed, remainingMs)
                 }
 
                 if (currentIndex >= total && !isPaused) {
                     hidManager.sendReport(HidReportBuilder.buildKeyUpReport())
-                    _typingState.value = TypingState.Completed(total)
+                    val duration = (System.currentTimeMillis() - startTimeMs).coerceAtLeast(0L)
+                    _typingState.value = TypingState.Completed(total, duration)
+                    startTimeMs = 0L
                 }
             } catch (e: CancellationException) {
                 hidManager.sendReport(HidReportBuilder.buildKeyUpReport())

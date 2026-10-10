@@ -20,13 +20,17 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.OpenInBrowser
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -270,6 +274,10 @@ fun ScriptsScreen(
     val scripts by viewModel.allScripts.collectAsState()
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: ZipShare Programs, 1: Saved Texts
+    var searchQuery by remember { mutableStateOf("") }
+    var sortByName by remember { mutableStateOf(false) }
+    var showNewDocDialog by remember { mutableStateOf(false) }
+    var newDocTitle by remember { mutableStateOf("") }
     var renamingScript by remember { mutableStateOf<ScriptEntity?>(null) }
     var renameInput by remember { mutableStateOf("") }
     var deletingScript by remember { mutableStateOf<ScriptEntity?>(null) }
@@ -426,58 +434,152 @@ fun ScriptsScreen(
             }
         } else {
             // TAB 1: User Saved Texts
-            if (scripts.isEmpty()) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
+            Column(modifier = Modifier.fillMaxSize()) {
+                // Search and controls bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        modifier = Modifier.weight(1f).height(48.dp),
+                        placeholder = { Text("Search saved texts...", fontSize = 12.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", modifier = Modifier.size(18.dp)) },
+                        singleLine = true,
+                        shape = RoundedCornerShape(10.dp)
+                    )
+
+                    IconButton(
+                        onClick = { sortByName = !sortByName },
+                        modifier = Modifier.size(42.dp)
+                    ) {
                         Icon(
-                            imageVector = Icons.Default.FolderOpen,
-                            contentDescription = "No texts",
-                            modifier = Modifier.size(54.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(modifier = Modifier.height(10.dp))
-                        Text(
-                            text = "No saved texts yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Type or paste text in the Editor and tap [Save] to store it.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            imageVector = Icons.Default.Sort,
+                            contentDescription = if (sortByName) "Sorted by Name" else "Sorted by Date",
+                            tint = if (sortByName) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
+
+                    Button(
+                        onClick = {
+                            newDocTitle = "Document_${System.currentTimeMillis() / 1000}.txt"
+                            showNewDocDialog = true
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(10.dp),
+                        modifier = Modifier.height(44.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "New", modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("New", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(scripts, key = { it.id }) { script ->
-                        ScriptCard(
-                            script = script,
-                            onLoad = {
-                                viewModel.loadScript(script)
-                                onScriptLoaded()
-                            },
-                            onRename = {
-                                renamingScript = script
-                                renameInput = script.title
-                            },
-                            onDelete = {
-                                deletingScript = script
-                            }
-                        )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                val filteredScripts = remember(scripts, searchQuery, sortByName) {
+                    scripts.filter {
+                        searchQuery.isBlank() ||
+                            it.title.contains(searchQuery, ignoreCase = true) ||
+                            it.content.contains(searchQuery, ignoreCase = true)
+                    }.let { list ->
+                        if (sortByName) list.sortedBy { it.title.lowercase() }
+                        else list.sortedByDescending { it.updatedAt }
+                    }
+                }
+
+                if (filteredScripts.isEmpty()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.FolderOpen,
+                                contentDescription = "No texts",
+                                modifier = Modifier.size(54.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = if (searchQuery.isNotBlank()) "No matching texts found" else "No saved texts yet",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = if (searchQuery.isNotBlank()) "Try a different search query" else "Type or paste text in the Editor and tap [Save] to store it.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(filteredScripts, key = { it.id }) { script ->
+                            ScriptCard(
+                                script = script,
+                                onLoad = {
+                                    viewModel.loadScript(script)
+                                    onScriptLoaded()
+                                },
+                                onRename = {
+                                    renamingScript = script
+                                    renameInput = script.title
+                                },
+                                onDuplicate = {
+                                    viewModel.duplicateScript(script.id)
+                                },
+                                onDelete = {
+                                    deletingScript = script
+                                }
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+
+    // New Document Dialog
+    if (showNewDocDialog) {
+        AlertDialog(
+            onDismissRequest = { showNewDocDialog = false },
+            title = { Text("Create New Text Document") },
+            text = {
+                OutlinedTextField(
+                    value = newDocTitle,
+                    onValueChange = { newDocTitle = it },
+                    label = { Text("Document Title") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val title = newDocTitle.ifBlank { "Document_${System.currentTimeMillis() / 1000}.txt" }
+                        viewModel.createNewScript(title, "")
+                        showNewDocDialog = false
+                        onScriptLoaded()
+                    }
+                ) {
+                    Text("CREATE & OPEN")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showNewDocDialog = false }) {
+                    Text("CANCEL")
+                }
+            }
+        )
     }
 
     // Rename Dialog (Only when explicitly triggered from card menu)
@@ -626,6 +728,7 @@ fun ScriptCard(
     script: ScriptEntity,
     onLoad: () -> Unit,
     onRename: () -> Unit,
+    onDuplicate: () -> Unit,
     onDelete: () -> Unit
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, yyyy HH:mm", Locale.getDefault()) }
@@ -666,6 +769,10 @@ fun ScriptCard(
                         modifier = Modifier.height(34.dp)
                     ) {
                         Text("LOAD", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    IconButton(onClick = onDuplicate, modifier = Modifier.size(34.dp)) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
 
                     IconButton(onClick = onRename, modifier = Modifier.size(34.dp)) {

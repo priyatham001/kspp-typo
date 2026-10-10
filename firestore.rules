@@ -45,6 +45,11 @@ service cloud.firestore {
       allow write: if isSuperAdmin();
     }
 
+    match /settings/windows_companion {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
     match /audit_logs/{logId} {
       allow read: if isAdmin();
       allow create: if isAuthenticated();

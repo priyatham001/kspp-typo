@@ -49,6 +49,17 @@ class ScriptManager(context: Context) {
         }
     }
 
+    suspend fun duplicateScript(id: Long): Long? {
+        val existing = dao.getScriptById(id) ?: return null
+        val copy = ScriptEntity(
+            title = "${existing.title} (Copy)",
+            content = existing.content,
+            language = existing.language,
+            updatedAt = System.currentTimeMillis()
+        )
+        return dao.insertScript(copy)
+    }
+
     suspend fun deleteScript(id: Long) {
         dao.deleteById(id)
     }
