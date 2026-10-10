@@ -19,38 +19,18 @@ import kotlinx.coroutines.tasks.await
 private const val TAG = "AuthRepository"
 
 class AuthRepository(
-    private val firestore: FirebaseFirestore?,
-    private val auth: FirebaseAuth?
+    private val firestore: FirebaseFirestore,
+    private val auth: FirebaseAuth = FirebaseAuth.getInstance()
 ) {
 
     constructor(context: Context) : this(
-        firestore = try {
-            val dbId = context.applicationContext.getString(R.string.firestore_database_id)
-            FirebaseFirestore.getInstance(dbId)
-        } catch (e: Exception) {
-            Log.w(TAG, "FirebaseFirestore not initialized yet: ${e.message}")
-            null
-        },
-        auth = try {
-            FirebaseAuth.getInstance()
-        } catch (e: Exception) {
-            Log.w(TAG, "FirebaseAuth not initialized yet: ${e.message}")
-            null
-        }
+        firestore = FirebaseFirestore.getInstance(
+            context.applicationContext.getString(R.string.firestore_database_id)
+        ),
+        auth = FirebaseAuth.getInstance()
     )
 
-    private val localAuthManager: AuthManager? = null
-
-    private val _currentProfile = MutableStateFlow<UserProfile?>(
-        UserProfile(
-            userId = "super_admin_owner",
-            displayName = "Service Owner",
-            email = "pskcoll68629@gmail.com",
-            status = UserProfile.STATUS_APPROVED,
-            role = UserProfile.ROLE_SUPER_ADMIN,
-            accessExpiresAt = 0L
-        )
-    )
+    private val _currentProfile = MutableStateFlow<UserProfile?>(null)
     val currentProfile: StateFlow<UserProfile?> = _currentProfile.asStateFlow()
 
     private val _serviceControl = MutableStateFlow(ServiceControl())
@@ -59,11 +39,10 @@ class AuthRepository(
     private var profileListener: ListenerRegistration? = null
     private var serviceListener: ListenerRegistration? = null
 
-    private val _currentUserFlow = MutableStateFlow<FirebaseUser?>(auth?.currentUser)
+    private val _currentUserFlow = MutableStateFlow<FirebaseUser?>(auth.currentUser)
     val currentUserFlow: StateFlow<FirebaseUser?> = _currentUserFlow.asStateFlow()
 
     val currentUser: FirebaseUser? get() = _currentUserFlow.value
-    val isFirebaseConfigured: Boolean get() = auth != null && firestore != null
 
     companion object {
         fun isSuperAdminEmail(email: String?): Boolean {
@@ -80,35 +59,23 @@ class AuthRepository(
         } else {
             profileListener?.remove()
             profileListener = null
-            if (_currentProfile.value == null) {
-                _currentProfile.value = UserProfile(
-                    userId = "super_admin_owner",
-                    displayName = "Service Owner",
-                    email = "pskcoll68629@gmail.com",
-                    status = UserProfile.STATUS_APPROVED,
-                    role = UserProfile.ROLE_SUPER_ADMIN,
-                    accessExpiresAt = 0L
-                )
-            }
+            _currentProfile.value = null
         }
         listenToServiceControl()
     }
 
     init {
-        if (auth != null && firestore != null) {
-            auth.addAuthStateListener(authStateListener)
-            listenToServiceControl()
+        auth.addAuthStateListener(authStateListener)
+        listenToServiceControl()
 
-            auth.currentUser?.let { user ->
-                listenToProfile(user.uid)
-            }
+        auth.currentUser?.let { user ->
+            listenToProfile(user.uid)
         }
     }
 
     suspend fun signInWithGoogleCredential(credential: AuthCredential): Result<UserProfile> {
         return try {
-            val firebaseAuth = auth ?: return Result.failure(IllegalStateException("Firebase is not configured yet."))
-            val authResult = firebaseAuth.signInWithCredential(credential).await()
+            val authResult = auth.signInWithCredential(credential).await()
             val firebaseUser = authResult.user ?: throw IllegalStateException("No user returned from Google Sign-In")
 
             val profile = syncUserProfile(firebaseUser)
@@ -122,15 +89,7 @@ class AuthRepository(
     }
 
     private suspend fun syncUserProfile(user: FirebaseUser): UserProfile {
-        val db = firestore ?: return UserProfile(
-            userId = user.uid,
-            displayName = user.displayName ?: "User",
-            email = user.email ?: "",
-            photoUrl = user.photoUrl?.toString(),
-            status = UserProfile.STATUS_APPROVED,
-            role = if (isSuperAdminEmail(user.email)) UserProfile.ROLE_SUPER_ADMIN else UserProfile.ROLE_USER
-        )
-        val userDocRef = db.collection("users").document(user.uid)
+        val userDocRef = firestore.collection("users").document(user.uid)
         val snapshot = userDocRef.get().await()
 
         val isOwnerEmail = isSuperAdminEmail(user.email)
@@ -225,9 +184,8 @@ class AuthRepository(
     }
 
     fun listenToProfile(userId: String) {
-        val db = firestore ?: return
         profileListener?.remove()
-        profileListener = db.collection("users").document(userId)
+        profileListener = firestore.collection("users").document(userId)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
                     Log.w(TAG, "Profile snapshot listener: ${error.message}")
@@ -255,10 +213,9 @@ class AuthRepository(
     }
 
     private fun listenToServiceControl() {
-        val db = firestore ?: return
         serviceListener?.remove()
         try {
-            serviceListener = db.collection("settings").document("service_control")
+            serviceListener = firestore.collection("settings").document("service_control")
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         Log.w(TAG, "ServiceControl listener: ${error.message}")
@@ -297,7 +254,6 @@ class AuthRepository(
 
     suspend fun recordAuditLog(log: AuditLog) {
         try {
-            val db = firestore ?: return
             val logMap = mapOf(
                 "timestamp" to log.timestamp,
                 "adminId" to log.adminId,
@@ -306,7 +262,7 @@ class AuthRepository(
                 "targetUserId" to log.targetUserId,
                 "result" to log.result
             )
-            db.collection("audit_logs").add(logMap).await()
+            firestore.collection("audit_logs").add(logMap).await()
         } catch (e: Exception) {
             Log.w(TAG, "Failed to record audit log: ${e.message}")
         }
@@ -319,19 +275,12 @@ class AuthRepository(
         } catch (_: Exception) {}
         profileListener = null
 
-        _currentProfile.value = UserProfile(
-            userId = "super_admin_owner",
-            displayName = "Service Owner",
-            email = "pskcoll68629@gmail.com",
-            status = UserProfile.STATUS_APPROVED,
-            role = UserProfile.ROLE_SUPER_ADMIN,
-            accessExpiresAt = 0L
-        )
+        _currentProfile.value = null
         _currentUserFlow.value = null
 
         // 2. Clear Firebase Auth session safely
         try {
-            auth?.signOut()
+            auth.signOut()
         } catch (e: Exception) {
             Log.w(TAG, "Error in auth.signOut", e)
         }
@@ -354,7 +303,7 @@ class AuthRepository(
     }
 
     fun cleanup() {
-        auth?.removeAuthStateListener(authStateListener)
+        auth.removeAuthStateListener(authStateListener)
         profileListener?.remove()
         profileListener = null
         serviceListener?.remove()

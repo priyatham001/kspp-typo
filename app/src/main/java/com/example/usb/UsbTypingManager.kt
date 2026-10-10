@@ -4,9 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.os.BatteryManager
 import android.os.Build
-import android.provider.Settings
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,15 +44,6 @@ class UsbTypingManager(private val context: Context) {
     private val _isUsbCableConnected = MutableStateFlow(false)
     val isUsbCableConnected: StateFlow<Boolean> = _isUsbCableConnected.asStateFlow()
 
-    private val _isDeveloperOptionsEnabled = MutableStateFlow(false)
-    val isDeveloperOptionsEnabled: StateFlow<Boolean> = _isDeveloperOptionsEnabled.asStateFlow()
-
-    private val _isUsbDebuggingEnabled = MutableStateFlow(false)
-    val isUsbDebuggingEnabled: StateFlow<Boolean> = _isUsbDebuggingEnabled.asStateFlow()
-
-    private val _diagnosticsReport = MutableStateFlow(UsbDiagnosticsReport())
-    val diagnosticsReport: StateFlow<UsbDiagnosticsReport> = _diagnosticsReport.asStateFlow()
-
     private val _typingProgress = MutableStateFlow<UsbTypingProgress>(UsbTypingProgress.Idle)
     val typingProgress: StateFlow<UsbTypingProgress> = _typingProgress.asStateFlow()
 
@@ -69,8 +58,6 @@ class UsbTypingManager(private val context: Context) {
     private var socketWriter: BufferedWriter? = null
     @Volatile
     private var serverSocket: ServerSocket? = null
-    @Volatile
-    private var isServerListening8990 = false
 
     private val socketSessionCounter = AtomicLong(0)
     private var serverListenerJob: Job? = null
@@ -80,97 +67,29 @@ class UsbTypingManager(private val context: Context) {
 
     private var activeSessionId = ""
     private var sessionStartTime = 0L
-    private var lastPingTimestamp = 0L
-    private var lastPongReceivedAt = 0L
-    private var activeTunnelDirection = "Reverse (8989)"
 
     private val usbReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context?, intent: Intent?) {
-            when (intent?.action) {
-                "android.hardware.usb.action.USB_STATE" -> {
-                    val connected = intent.getBooleanExtra("connected", false) ||
-                        intent.getBooleanExtra("configured", false)
-                    _isUsbCableConnected.value = connected || checkBatteryUsbPlugged()
-                    refreshSystemSettingsState()
-                    if (!_isUsbCableConnected.value && _connectionState.value is UsbConnectionState.Synced) {
-                        disconnect("USB Cable Disconnected")
-                    }
-                }
-                Intent.ACTION_BATTERY_CHANGED -> {
-                    val plugged = intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)
-                    val isUsbPlugged = (plugged == BatteryManager.BATTERY_PLUGGED_USB)
-                    if (isUsbPlugged != _isUsbCableConnected.value) {
-                        _isUsbCableConnected.value = isUsbPlugged
-                        refreshSystemSettingsState()
-                        if (!isUsbPlugged && _connectionState.value is UsbConnectionState.Synced) {
-                            disconnect("USB Cable Disconnected")
-                        }
-                    }
+            if (intent?.action == "android.hardware.usb.action.USB_STATE") {
+                val connected = intent.getBooleanExtra("connected", false)
+                _isUsbCableConnected.value = connected
+                Log.d(TAG, "USB State changed: connected=$connected")
+                if (!connected && _connectionState.value is UsbConnectionState.Synced) {
+                    disconnect("USB Cable Disconnected")
                 }
             }
         }
     }
 
     init {
-        refreshSystemSettingsState()
         registerUsbReceiver()
         startServerListener()
         startAutoReconnectLoop()
     }
 
-    /**
-     * Reads real Android system settings for USB Cable (BatteryManager.BATTERY_PLUGGED_USB),
-     * Developer Options (DEVELOPMENT_SETTINGS_ENABLED), and USB Debugging (ADB_ENABLED).
-     * Never fakes or simulates these values.
-     */
-    fun refreshSystemSettingsState() {
-        try {
-            val usbPlugged = checkBatteryUsbPlugged()
-            if (usbPlugged) {
-                _isUsbCableConnected.value = true
-            }
-        } catch (_: Exception) {}
-
-        try {
-            val devEnabled = Settings.Global.getInt(
-                context.contentResolver,
-                Settings.Global.DEVELOPMENT_SETTINGS_ENABLED,
-                0
-            ) == 1
-            _isDeveloperOptionsEnabled.value = devEnabled
-        } catch (_: Exception) {}
-
-        try {
-            val adbEnabled = Settings.Global.getInt(
-                context.contentResolver,
-                Settings.Global.ADB_ENABLED,
-                0
-            ) == 1
-            _isUsbDebuggingEnabled.value = adbEnabled
-            if (adbEnabled) {
-                _isDeveloperOptionsEnabled.value = true
-            }
-        } catch (_: Exception) {}
-
-        updateDiagnosticsSnapshot()
-    }
-
-    private fun checkBatteryUsbPlugged(): Boolean {
-        return try {
-            val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-            val plugged = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) ?: -1
-            plugged == BatteryManager.BATTERY_PLUGGED_USB
-        } catch (e: Exception) {
-            false
-        }
-    }
-
     private fun registerUsbReceiver() {
         try {
-            val filter = IntentFilter().apply {
-                addAction("android.hardware.usb.action.USB_STATE")
-                addAction(Intent.ACTION_BATTERY_CHANGED)
-            }
+            val filter = IntentFilter("android.hardware.usb.action.USB_STATE")
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(usbReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
             } else {
@@ -192,17 +111,14 @@ class UsbTypingManager(private val context: Context) {
                 serverSocket = ServerSocket(PHONE_LISTEN_PORT).apply {
                     reuseAddress = true
                 }
-                isServerListening8990 = true
-                updateDiagnosticsSnapshot()
                 Log.d(TAG, "Phone server socket listening on port $PHONE_LISTEN_PORT")
 
                 while (isActive) {
                     try {
                         val client = serverSocket?.accept() ?: break
-                        Log.d(TAG, "Incoming forward-tunnel connection from ${client.inetAddress}:${client.port}")
+                        Log.d(TAG, "Incoming connection from ${client.inetAddress}:${client.port}")
                         client.soTimeout = SOCKET_TIMEOUT_MS
-                        activeTunnelDirection = "Forward Tunnel (8990)"
-                        handleEstablishedSocket(client, isForwardTunnel = true)
+                        handleEstablishedSocket(client)
                     } catch (e: Exception) {
                         if (!isActive) break
                         Log.d(TAG, "ServerSocket accept exception: ${e.message}")
@@ -210,8 +126,6 @@ class UsbTypingManager(private val context: Context) {
                     }
                 }
             } catch (e: Exception) {
-                isServerListening8990 = false
-                updateDiagnosticsSnapshot()
                 Log.w(TAG, "Failed to bind server socket on $PHONE_LISTEN_PORT: ${e.message}")
             }
         }
@@ -225,7 +139,6 @@ class UsbTypingManager(private val context: Context) {
         autoReconnectJob = scope.launch(Dispatchers.IO) {
             while (isActive) {
                 delay(3000)
-                refreshSystemSettingsState()
                 val current = _connectionState.value
                 if (current !is UsbConnectionState.Synced && current !is UsbConnectionState.Connecting) {
                     try {
@@ -239,44 +152,28 @@ class UsbTypingManager(private val context: Context) {
     }
 
     /**
-     * Explicit check & diagnose connection.
-     * Verifies USB cable, Developer Options, USB Debugging, Reverse Tunnel (8989), Forward Server (8990),
-     * Handshake (HANDSHAKE_SYN -> HANDSHAKE_ACK), and Heartbeat (PING -> PONG).
-     * Never marks Synced unless the real socket handshake completes.
+     * Explicit check connection.
+     * If already Synced, pings the existing socket instead of reconnecting.
      */
     suspend fun checkConnection(
         targetHost: String = "127.0.0.1",
         targetPort: Int = PC_COMPANION_PORT
     ): UsbConnectionState = withContext(Dispatchers.IO) {
-        refreshSystemSettingsState()
-
         val current = _connectionState.value
         if (current is UsbConnectionState.Synced) {
             val sock = activeSocket
             if (sock != null && !sock.isClosed && sock.isConnected) {
                 val t0 = System.currentTimeMillis()
-                lastPingTimestamp = t0
                 val pingMsg = JSONObject().apply {
                     put("type", "PING")
                     put("timestamp", t0)
                 }.toString()
 
                 if (sendRawLine(pingMsg)) {
-                    // Wait up to 800ms for real PONG response
-                    var waited = 0
-                    while (waited < 16 && lastPongReceivedAt < t0) {
-                        delay(50)
-                        waited++
-                    }
-                    val latency = if (lastPongReceivedAt >= t0) {
-                        (lastPongReceivedAt - t0).coerceAtLeast(1L)
-                    } else {
-                        (System.currentTimeMillis() - t0).coerceAtLeast(1L)
-                    }
+                    val latency = (System.currentTimeMillis() - t0).coerceAtLeast(1L)
                     _lastLatencyMs.value = latency
                     val updated = current.copy(latencyMs = latency)
                     _connectionState.value = updated
-                    updateDiagnosticsSnapshot()
                     return@withContext updated
                 } else {
                     Log.d(TAG, "Existing synced socket ping failed, reconnecting...")
@@ -291,131 +188,69 @@ class UsbTypingManager(private val context: Context) {
             val socket = Socket()
             socket.connect(InetSocketAddress(targetHost, targetPort), 2500)
             socket.soTimeout = SOCKET_TIMEOUT_MS
-            activeTunnelDirection = "Reverse Tunnel (8989)"
-            return@withContext handleEstablishedSocket(socket, isForwardTunnel = false)
+            return@withContext handleEstablishedSocket(socket)
         } catch (e: Exception) {
             Log.d(TAG, "Connection probe to $targetHost:$targetPort failed: ${e.message}")
-
-            val (failedStage, reasonMsg, fixMsg) = buildDetailedFailureDiagnostics(e.message)
             val state = UsbConnectionState.Disconnected(
-                reason = reasonMsg,
-                failedStage = failedStage,
-                fixSuggestion = fixMsg
+                "Companion not reached. Ensure replica-companion.exe is running on PC."
             )
             _connectionState.value = state
-            updateDiagnosticsSnapshot(
-                failedStage = failedStage,
-                actionableFix = fixMsg
-            )
             return@withContext state
         }
     }
 
-    private fun buildDetailedFailureDiagnostics(socketError: String?): Triple<String, String, String> {
-        val cable = _isUsbCableConnected.value
-        val devOpts = _isDeveloperOptionsEnabled.value
-        val adbOn = _isUsbDebuggingEnabled.value
+    private suspend fun handleEstablishedSocket(socket: Socket): UsbConnectionState =
+        withContext(Dispatchers.IO) {
+            val sessionId = socketSessionCounter.incrementAndGet()
 
-        return when {
-            !devOpts -> Triple(
-                "Step 1: Developer Options Disabled",
-                "Developer Options are currently turned OFF on this phone.",
-                "Tap 'Step 1: Open Settings' below, go to About Phone, and tap 'Build Number' 7 times to unlock Developer Options."
+            closeActiveSocket()
+            activeSocket = socket
+            socketReader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
+            socketWriter = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8))
+
+            _connectionState.value = UsbConnectionState.Connected(
+                host = socket.inetAddress?.hostAddress ?: "127.0.0.1",
+                port = socket.port
             )
-            !adbOn -> Triple(
-                "Step 2: USB Debugging Disabled",
-                "USB Debugging (ADB) is currently turned OFF in Developer Options.",
-                "Tap 'Step 2: Enable USB Debugging' below and switch ON 'USB debugging' inside Developer Options."
-            )
-            !cable -> Triple(
-                "Step 3: USB Cable Not Detected",
-                "No active USB data connection to PC detected.",
-                "Connect your phone to the Windows PC using a USB data cable (not a charge-only cable) and unlock your phone screen."
-            )
-            else -> Triple(
-                "Step 4-6: ADB Authorization / Tunnel / Companion (Port 8989)",
-                "Companion not reached on 127.0.0.1:8989 (${socketError ?: "Connection refused"}).",
-                "1. Run replica-companion.exe on your Windows PC.\n" +
-                    "2. Ensure adb.exe (Android Platform-Tools) is in the same folder as replica-companion.exe or on Windows PATH so ADB triggers the 'Allow USB debugging?' popup.\n" +
-                    "3. Unlock your phone, check 'Always allow from this computer', and tap Allow.\n" +
-                    "4. Or run on PC: adb reverse tcp:8989 tcp:8989 && adb forward tcp:8990 tcp:8990"
-            )
-        }
-    }
 
-    private suspend fun handleEstablishedSocket(
-        socket: Socket,
-        isForwardTunnel: Boolean
-    ): UsbConnectionState = withContext(Dispatchers.IO) {
-        val sessionId = socketSessionCounter.incrementAndGet()
+            startReaderLoop(sessionId)
 
-        closeActiveSocket()
-        activeSocket = socket
-        socketReader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
-        socketWriter = BufferedWriter(OutputStreamWriter(socket.getOutputStream(), Charsets.UTF_8))
+            // Send HANDSHAKE_SYN
+            val synTime = System.currentTimeMillis()
+            val syn = JSONObject().apply {
+                put("type", "HANDSHAKE_SYN")
+                put("protocolVersion", PROTOCOL_VERSION)
+                put("client", "replica_kspp_android")
+                put("appVersion", "1.0.0")
+                put("timestamp", synTime)
+            }.toString()
 
-        // If a socket arrived over localhost USB tunnel, USB cable and ADB are physically active
-        _isUsbCableConnected.value = true
-
-        _connectionState.value = UsbConnectionState.Connected(
-            host = socket.inetAddress?.hostAddress ?: "127.0.0.1",
-            port = if (isForwardTunnel) PHONE_LISTEN_PORT else socket.port
-        )
-
-        startReaderLoop(sessionId)
-
-        // Send HANDSHAKE_SYN (Protocol v1)
-        val synTime = System.currentTimeMillis()
-        lastPingTimestamp = synTime
-        val syn = JSONObject().apply {
-            put("type", "HANDSHAKE_SYN")
-            put("protocolVersion", PROTOCOL_VERSION)
-            put("client", "replica_kspp_android")
-            put("appVersion", "1.0.0")
-            put("timestamp", synTime)
-        }.toString()
-
-        val sent = sendRawLine(syn)
-        if (!sent) {
-            val err = UsbConnectionState.Error(
-                message = "Failed to transmit HANDSHAKE_SYN to Windows companion",
-                failedStage = "Handshake SYN Transmission",
-                fixSuggestion = "Socket closed unexpectedly during handshake. Restart replica-companion.exe on PC."
-            )
-            _connectionState.value = err
-            updateDiagnosticsSnapshot(
-                failedStage = "Handshake SYN Transmission",
-                actionableFix = err.fixSuggestion
-            )
-            return@withContext err
-        }
-
-        // Await HANDSHAKE_ACK in reader loop up to 3.5 seconds
-        var waited = 0
-        while (waited < 35) {
-            val state = _connectionState.value
-            if (state is UsbConnectionState.Synced || state is UsbConnectionState.Incompatible) {
-                startHeartbeat()
-                updateDiagnosticsSnapshot()
-                return@withContext state
+            val sent = sendRawLine(syn)
+            if (!sent) {
+                val err = UsbConnectionState.Error("Failed to transmit handshake SYN to companion")
+                _connectionState.value = err
+                return@withContext err
             }
-            delay(100)
-            waited++
-        }
 
-        val timeoutState = UsbConnectionState.Disconnected(
-            reason = "TCP port connected, but HANDSHAKE_ACK timed out.",
-            failedStage = "Protocol Handshake (HANDSHAKE_ACK Timeout)",
-            fixSuggestion = "Port 8989 is open, but replica-companion.exe did not respond. Make sure the companion console window is not frozen and no other app is using port 8989."
-        )
-        _connectionState.value = timeoutState
-        closeActiveSocket()
-        updateDiagnosticsSnapshot(
-            failedStage = timeoutState.failedStage,
-            actionableFix = timeoutState.fixSuggestion
-        )
-        return@withContext timeoutState
-    }
+            // Await ACK in reader loop up to 3 seconds
+            var waited = 0
+            while (waited < 30) {
+                val state = _connectionState.value
+                if (state is UsbConnectionState.Synced || state is UsbConnectionState.Incompatible) {
+                    startHeartbeat()
+                    return@withContext state
+                }
+                delay(100)
+                waited++
+            }
+
+            val timeoutState = UsbConnectionState.Disconnected(
+                "Handshake timed out. No response from Windows companion."
+            )
+            _connectionState.value = timeoutState
+            closeActiveSocket()
+            return@withContext timeoutState
+        }
 
     private fun startReaderLoop(sessionId: Long) {
         readerJob?.cancel()
@@ -431,8 +266,9 @@ class UsbTypingManager(private val context: Context) {
             } catch (e: Exception) {
                 Log.d(TAG, "Socket reader exception [session $sessionId]: ${e.message}")
             } finally {
+                // Prevent race: only disconnect if this reader is still the active session
                 if (socketSessionCounter.get() == sessionId) {
-                    disconnect("Connection closed by Windows companion")
+                    disconnect("Connection closed by host")
                 }
             }
         }
@@ -444,26 +280,10 @@ class UsbTypingManager(private val context: Context) {
             val type = json.optString("type")
 
             when (type) {
-                "HANDSHAKE_ACK", "STATUS_RES" -> {
+                "HANDSHAKE_ACK" -> {
                     val proto = json.optInt("protocolVersion", 1)
                     val compVersion = json.optString("companionVersion", "1.1.0")
                     val os = json.optString("os", "Windows")
-                    val adbPath = json.optString("adbPath", "").ifBlank { null }
-                    val adbVersion = json.optString("adbVersion", "").ifBlank { null }
-                    val adbDevices = json.optString("adbDevices", "").ifBlank { null }
-                    val devAuth = if (json.has("deviceAuthorized")) json.optBoolean("deviceAuthorized", true) else true
-                    val revStatus = json.optString("reverseStatus", "").ifBlank { null }
-                    val fwdStatus = json.optString("forwardStatus", "").ifBlank { null }
-                    val tunnelMode = json.optString("tunnelMode", activeTunnelDirection)
-
-                    val now = System.currentTimeMillis()
-                    val rtt = if (lastPingTimestamp > 0 && now >= lastPingTimestamp) {
-                        (now - lastPingTimestamp).coerceIn(1L, 2000L)
-                    } else {
-                        _lastLatencyMs.value.coerceAtLeast(1L)
-                    }
-                    _lastLatencyMs.value = rtt
-                    lastPongReceivedAt = now
 
                     if (proto != PROTOCOL_VERSION) {
                         _connectionState.value = UsbConnectionState.Incompatible(
@@ -475,46 +295,16 @@ class UsbTypingManager(private val context: Context) {
                             companionVersion = compVersion,
                             protocolVersion = proto,
                             deviceOs = os,
-                            latencyMs = rtt,
-                            tunnelMode = tunnelMode,
-                            adbStatus = adbDevices ?: "Authorized & Active"
-                        )
-                        _diagnosticsReport.value = _diagnosticsReport.value.copy(
-                            cableOrUsbDetected = true,
-                            reverseTunnel8989Reachable = tunnelMode.contains("8989") || (revStatus?.startsWith("OK") == true),
-                            forwardTunnel8990Connected = tunnelMode.contains("8990") || (fwdStatus?.startsWith("OK") == true) || isServerListening8990,
-                            handshakeCompleted = true,
-                            heartbeatVerified = true,
-                            companionAdbPath = adbPath,
-                            companionAdbVersion = adbVersion,
-                            companionAdbDevices = adbDevices,
-                            companionDeviceAuthorized = devAuth,
-                            companionReverseStatus = revStatus,
-                            companionForwardStatus = fwdStatus,
-                            failedStage = null,
-                            actionableFix = null,
-                            timestamp = now
+                            latencyMs = _lastLatencyMs.value
                         )
                     }
                 }
 
                 "PONG" -> {
-                    val now = System.currentTimeMillis()
-                    lastPongReceivedAt = now
-                    val rtt = if (lastPingTimestamp > 0 && now >= lastPingTimestamp) {
-                        (now - lastPingTimestamp).coerceIn(1L, 2000L)
-                    } else {
-                        _lastLatencyMs.value.coerceAtLeast(1L)
-                    }
-                    _lastLatencyMs.value = rtt
                     val state = _connectionState.value
                     if (state is UsbConnectionState.Synced) {
-                        _connectionState.value = state.copy(latencyMs = rtt)
+                        _connectionState.value = state.copy(latencyMs = _lastLatencyMs.value)
                     }
-                    _diagnosticsReport.value = _diagnosticsReport.value.copy(
-                        heartbeatVerified = true,
-                        timestamp = now
-                    )
                 }
 
                 "PROGRESS" -> {
@@ -557,16 +347,8 @@ class UsbTypingManager(private val context: Context) {
 
                 "STOPPED" -> {
                     val cur = _typingProgress.value
-                    val typed = when (cur) {
-                        is UsbTypingProgress.Typing -> cur.currentIndex
-                        is UsbTypingProgress.Paused -> cur.currentIndex
-                        else -> 0
-                    }
-                    val total = when (cur) {
-                        is UsbTypingProgress.Typing -> cur.totalChars
-                        is UsbTypingProgress.Paused -> cur.totalChars
-                        else -> 0
-                    }
+                    val typed = if (cur is UsbTypingProgress.Typing) cur.currentIndex else 0
+                    val total = if (cur is UsbTypingProgress.Typing) cur.totalChars else 0
                     _typingProgress.value = UsbTypingProgress.Stopped(typed, total)
                 }
 
@@ -586,27 +368,6 @@ class UsbTypingManager(private val context: Context) {
         }
     }
 
-    private fun updateDiagnosticsSnapshot(
-        failedStage: String? = _diagnosticsReport.value.failedStage,
-        actionableFix: String? = _diagnosticsReport.value.actionableFix
-    ) {
-        val isSynced = _connectionState.value is UsbConnectionState.Synced
-        val cur = _diagnosticsReport.value
-        _diagnosticsReport.value = cur.copy(
-            cableOrUsbDetected = _isUsbCableConnected.value || isSynced,
-            developerOptionsEnabled = _isDeveloperOptionsEnabled.value,
-            usbDebuggingEnabled = _isUsbDebuggingEnabled.value,
-            phoneServerListening8990 = isServerListening8990,
-            reverseTunnel8989Reachable = if (isSynced) (cur.reverseTunnel8989Reachable || activeTunnelDirection.contains("8989")) else false,
-            forwardTunnel8990Connected = if (isSynced) (cur.forwardTunnel8990Connected || activeTunnelDirection.contains("8990") || isServerListening8990) else isServerListening8990,
-            handshakeCompleted = isSynced,
-            heartbeatVerified = isSynced && lastPongReceivedAt > 0L,
-            failedStage = if (isSynced) null else failedStage,
-            actionableFix = if (isSynced) null else actionableFix,
-            timestamp = System.currentTimeMillis()
-        )
-    }
-
     private fun startHeartbeat() {
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch(Dispatchers.IO) {
@@ -614,14 +375,15 @@ class UsbTypingManager(private val context: Context) {
                 delay(3500)
                 if (_connectionState.value is UsbConnectionState.Synced) {
                     val t0 = System.currentTimeMillis()
-                    lastPingTimestamp = t0
                     val ping = JSONObject().apply {
                         put("type", "PING")
                         put("timestamp", t0)
                     }.toString()
 
                     val ok = sendRawLine(ping)
-                    if (!ok) {
+                    if (ok) {
+                        _lastLatencyMs.value = (System.currentTimeMillis() - t0).coerceAtLeast(1L)
+                    } else {
                         disconnect("Heartbeat transmission failed")
                         break
                     }
@@ -714,14 +476,8 @@ class UsbTypingManager(private val context: Context) {
         heartbeatJob?.cancel()
         readerJob?.cancel()
         closeActiveSocket()
-        val (failedStage, _, fixMsg) = buildDetailedFailureDiagnostics(reason)
-        _connectionState.value = UsbConnectionState.Disconnected(
-            reason = reason,
-            failedStage = failedStage,
-            fixSuggestion = fixMsg
-        )
+        _connectionState.value = UsbConnectionState.Disconnected(reason)
         _typingProgress.value = UsbTypingProgress.Idle
-        updateDiagnosticsSnapshot(failedStage = failedStage, actionableFix = fixMsg)
     }
 
     fun cleanup() {

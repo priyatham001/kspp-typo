@@ -16,15 +16,7 @@ object GoogleSignInHelper {
 
     suspend fun getGoogleAuthCredential(context: Context): AuthCredential? {
         val credentialManager = CredentialManager.create(context)
-        val serverClientId = try {
-            val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-            if (resId != 0) context.getString(resId) else ""
-        } catch (e: Exception) {
-            ""
-        }
-        if (serverClientId.isBlank()) {
-            throw IllegalStateException("Google Sign-In is not configured yet (missing google-services.json / default_web_client_id).")
-        }
+        val serverClientId = context.getString(R.string.default_web_client_id)
 
         // Raw nonce for replay attack prevention
         val rawNonce = UUID.randomUUID().toString()

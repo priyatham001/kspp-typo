@@ -24,13 +24,12 @@ private const val TAG = "CompanionManager"
 
 class CompanionManager(private val context: Context) {
 
-    private val firestore: FirebaseFirestore? by lazy {
+    private val firestore by lazy {
         try {
             val dbId = context.applicationContext.getString(R.string.firestore_database_id)
             FirebaseFirestore.getInstance(dbId)
         } catch (e: Exception) {
-            Log.w(TAG, "FirebaseFirestore not initialized yet in CompanionManager: ${e.message}")
-            null
+            FirebaseFirestore.getInstance()
         }
     }
 
@@ -42,22 +41,24 @@ class CompanionManager(private val context: Context) {
     }
 
     /**
-     * Extracts bundled replica-companion.exe from assets to internal storage if needed or outdated.
+     * Extracts bundled replica-companion.exe from assets to internal storage if needed.
      */
     fun ensureLocalCompanionExtracted(): Boolean {
+        if (localCompanionFile.exists() && localCompanionFile.length() > 0) {
+            return true
+        }
+
         return try {
-            val assetBytes = context.assets.open("companion/replica-companion.exe").use { it.readBytes() }
-            if (localCompanionFile.exists() && localCompanionFile.length() == assetBytes.size.toLong()) {
-                return true
+            context.assets.open("companion/replica-companion.exe").use { input ->
+                FileOutputStream(localCompanionFile).use { output ->
+                    input.copyTo(output)
+                }
             }
-            FileOutputStream(localCompanionFile).use { output ->
-                output.write(assetBytes)
-            }
-            Log.d(TAG, "Bundled replica-companion.exe (${assetBytes.size} bytes) extracted to ${localCompanionFile.absolutePath}")
+            Log.d(TAG, "Bundled replica-companion.exe extracted to ${localCompanionFile.absolutePath}")
             true
         } catch (e: Exception) {
             Log.w(TAG, "Could not extract companion from assets: ${e.message}")
-            localCompanionFile.exists() && localCompanionFile.length() > 0
+            false
         }
     }
 
@@ -81,13 +82,7 @@ class CompanionManager(private val context: Context) {
      * Real-time Flow of Companion metadata from Firestore.
      */
     fun getCompanionInfoFlow(): Flow<CompanionInfo> = callbackFlow {
-        val db = firestore
-        if (db == null) {
-            trySend(getDefaultCompanionInfo())
-            awaitClose {}
-            return@callbackFlow
-        }
-        val docRef = db.collection("settings").document("windows_companion")
+        val docRef = firestore.collection("settings").document("windows_companion")
         val listener = docRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w(TAG, "Firestore error reading companion config: ${error.message}")
@@ -118,8 +113,8 @@ class CompanionManager(private val context: Context) {
     }
 
     fun getDefaultCompanionInfo(): CompanionInfo {
-        val size = if (localCompanionFile.exists() && localCompanionFile.length() > 0) localCompanionFile.length() else 437196L
-        val sha = if (localCompanionFile.exists() && localCompanionFile.length() > 0) calculateFileSha256(localCompanionFile) else "61170807a9f46930974ac2b0335f5aaa695f9112b95d6fa99b18755b1e474e9a"
+        val size = if (localCompanionFile.exists() && localCompanionFile.length() > 0) localCompanionFile.length() else 265080L
+        val sha = if (localCompanionFile.exists() && localCompanionFile.length() > 0) calculateFileSha256(localCompanionFile) else "dbf6b872f48b431d897492a094a03f6a27ae9e84b1f1f5fe4110f04326f790df"
         return CompanionInfo(
             version = "1.1.0",
             protocolVersion = 1,
@@ -130,7 +125,7 @@ class CompanionManager(private val context: Context) {
             downloadUrl = "/download/replica-companion.exe",
             uploadedBy = "admin",
             lastUpdated = System.currentTimeMillis(),
-            releaseNotes = "Official Windows companion program v1.1.0 with automatic ADB discovery, authorization diagnostics, dual-tunnel (8989/8990) auto-recovery, and multi-threaded Unicode typing."
+            releaseNotes = "Official Windows companion program for USB auto-typing into Windows applications."
         )
     }
 
@@ -228,8 +223,8 @@ class CompanionManager(private val context: Context) {
 
             // Save to Firestore
             try {
-                firestore?.collection("settings")?.document("windows_companion")
-                    ?.set(
+                firestore.collection("settings").document("windows_companion")
+                    .set(
                         mapOf(
                             "version" to updatedInfo.version,
                             "protocolVersion" to updatedInfo.protocolVersion,
@@ -242,7 +237,7 @@ class CompanionManager(private val context: Context) {
                             "lastUpdated" to updatedInfo.lastUpdated,
                             "releaseNotes" to updatedInfo.releaseNotes
                         )
-                    )?.await()
+                    ).await()
             } catch (e: Exception) {
                 Log.w(TAG, "Firestore write warning: ${e.message}")
             }
