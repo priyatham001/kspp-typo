@@ -24,10 +24,13 @@ import java.io.OutputStreamWriter
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.util.concurrent.atomic.AtomicLong
 
 private const val TAG = "UsbTypingManager"
-private const val USB_PORT = 8989
+private const val PC_COMPANION_PORT = 8989
+private const val PHONE_LISTEN_PORT = 8990
 private const val PROTOCOL_VERSION = 1
+private const val SOCKET_TIMEOUT_MS = 20000
 
 class UsbTypingManager(private val context: Context) {
 
@@ -47,12 +50,18 @@ class UsbTypingManager(private val context: Context) {
     private val _lastLatencyMs = MutableStateFlow(0L)
     val lastLatencyMs: StateFlow<Long> = _lastLatencyMs.asStateFlow()
 
+    @Volatile
     private var activeSocket: Socket? = null
+    @Volatile
     private var socketReader: BufferedReader? = null
+    @Volatile
     private var socketWriter: BufferedWriter? = null
+    @Volatile
     private var serverSocket: ServerSocket? = null
 
-    private var connectionMonitorJob: Job? = null
+    private val socketSessionCounter = AtomicLong(0)
+    private var serverListenerJob: Job? = null
+    private var autoReconnectJob: Job? = null
     private var heartbeatJob: Job? = null
     private var readerJob: Job? = null
 
@@ -74,7 +83,8 @@ class UsbTypingManager(private val context: Context) {
 
     init {
         registerUsbReceiver()
-        startConnectionListener()
+        startServerListener()
+        startAutoReconnectLoop()
     }
 
     private fun registerUsbReceiver() {
@@ -90,116 +100,109 @@ class UsbTypingManager(private val context: Context) {
         }
     }
 
-    fun startConnectionListener() {
-        connectionMonitorJob?.cancel()
-        connectionMonitorJob = scope.launch {
-            // Start local server socket to accept forward connections from PC
-            launch { runServerSocketListener() }
-        }
-    }
-
-    private suspend fun runServerSocketListener() = withContext(Dispatchers.IO) {
-        try {
-            serverSocket?.close()
-            serverSocket = ServerSocket(USB_PORT).apply {
-                reuseAddress = true
-            }
-            Log.d(TAG, "Server socket listening on port $USB_PORT")
-
-            while (isActive) {
-                try {
-                    val client = serverSocket?.accept() ?: break
-                    Log.d(TAG, "Incoming connection from ${client.inetAddress}:${client.port}")
-                    handleEstablishedSocket(client)
-                } catch (e: Exception) {
-                    if (!isActive) break
-                    Log.d(TAG, "ServerSocket accept exception: ${e.message}")
-                    delay(1000)
+    /**
+     * Listens on PHONE_LISTEN_PORT (8990) for incoming connections from PC via `adb forward tcp:8990 tcp:8990`.
+     */
+    fun startServerListener() {
+        serverListenerJob?.cancel()
+        serverListenerJob = scope.launch(Dispatchers.IO) {
+            try {
+                serverSocket?.close()
+                serverSocket = ServerSocket(PHONE_LISTEN_PORT).apply {
+                    reuseAddress = true
                 }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "Failed to bind server socket on $USB_PORT: ${e.message}")
-        }
-    }
+                Log.d(TAG, "Phone server socket listening on port $PHONE_LISTEN_PORT")
 
-    suspend fun checkConnection(customHost: String? = null, targetPort: Int = USB_PORT): UsbConnectionState =
-        withContext(Dispatchers.IO) {
-            val startTime = System.currentTimeMillis()
-
-            // 1. If active socket is already established & connected, verify with PING
-            activeSocket?.let { sock ->
-                if (!sock.isClosed && sock.isConnected) {
+                while (isActive) {
                     try {
-                        val pingMsg = JSONObject().apply {
-                            put("type", "PING")
-                            put("timestamp", startTime)
-                        }.toString()
-                        val ok = sendRawLine(pingMsg)
-                        if (ok) {
-                            val elapsed = System.currentTimeMillis() - startTime
-                            _lastLatencyMs.value = elapsed
-                            val currentState = _connectionState.value
-                            if (currentState is UsbConnectionState.Synced) {
-                                val updated = currentState.copy(latencyMs = elapsed)
-                                _connectionState.value = updated
-                                return@withContext updated
-                            }
-                        }
+                        val client = serverSocket?.accept() ?: break
+                        Log.d(TAG, "Incoming connection from ${client.inetAddress}:${client.port}")
+                        client.soTimeout = SOCKET_TIMEOUT_MS
+                        handleEstablishedSocket(client)
                     } catch (e: Exception) {
-                        Log.d(TAG, "Active socket probe failed: ${e.message}")
-                        closeActiveSocket()
+                        if (!isActive) break
+                        Log.d(TAG, "ServerSocket accept exception: ${e.message}")
+                        delay(1000)
                     }
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to bind server socket on $PHONE_LISTEN_PORT: ${e.message}")
             }
-
-            // 2. Candidate hosts to probe:
-            // - If customHost provided, prioritize it
-            // - 127.0.0.1 (ADB reverse tcp:8989 tcp:8989 standard)
-            // - 10.0.2.2 (Android Emulator loopback to host PC)
-            val candidateHosts = mutableListOf<String>()
-            if (!customHost.isNullOrBlank()) {
-                candidateHosts.add(customHost.trim())
-            }
-            if (!candidateHosts.contains("127.0.0.1")) candidateHosts.add("127.0.0.1")
-            if (!candidateHosts.contains("10.0.2.2")) candidateHosts.add("10.0.2.2")
-
-            var lastFailureReason = "Windows companion not detected."
-
-            for (host in candidateHosts) {
-                _connectionState.value = UsbConnectionState.Connecting("Probing companion on $host:$targetPort...")
-                try {
-                    val socket = Socket()
-                    // 1500ms connection timeout per candidate for responsive checks
-                    socket.connect(InetSocketAddress(host, targetPort), 1500)
-                    socket.soTimeout = 4000
-                    Log.d(TAG, "Connected to companion at $host:$targetPort! Running handshake...")
-                    val result = handleEstablishedSocket(socket)
-                    if (result is UsbConnectionState.Synced) {
-                        return@withContext result
-                    }
-                } catch (e: Exception) {
-                    Log.d(TAG, "Probe to $host:$targetPort failed: ${e.message}")
-                    lastFailureReason = when {
-                        e is java.net.ConnectException -> "Connection refused on $host:$targetPort. Ensure replica-companion.exe is running on PC."
-                        e is java.net.SocketTimeoutException -> "Connection timed out on $host:$targetPort."
-                        else -> "Could not reach companion on $host:$targetPort (${e.message})."
-                    }
-                }
-            }
-
-            // If incoming socket was accepted via ServerSocket in background
-            val currentState = _connectionState.value
-            if (currentState is UsbConnectionState.Synced) {
-                return@withContext currentState
-            }
-
-            val finalDisconnectedState = UsbConnectionState.Disconnected(lastFailureReason)
-            _connectionState.value = finalDisconnectedState
-            return@withContext finalDisconnectedState
         }
+    }
+
+    /**
+     * Automatic background reconnection every 3 seconds when disconnected or idle.
+     */
+    private fun startAutoReconnectLoop() {
+        autoReconnectJob?.cancel()
+        autoReconnectJob = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(3000)
+                val current = _connectionState.value
+                if (current !is UsbConnectionState.Synced && current !is UsbConnectionState.Connecting) {
+                    try {
+                        checkConnection("127.0.0.1", PC_COMPANION_PORT)
+                    } catch (e: Exception) {
+                        Log.d(TAG, "Auto-reconnect attempt: ${e.message}")
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Explicit check connection.
+     * If already Synced, pings the existing socket instead of reconnecting.
+     */
+    suspend fun checkConnection(
+        targetHost: String = "127.0.0.1",
+        targetPort: Int = PC_COMPANION_PORT
+    ): UsbConnectionState = withContext(Dispatchers.IO) {
+        val current = _connectionState.value
+        if (current is UsbConnectionState.Synced) {
+            val sock = activeSocket
+            if (sock != null && !sock.isClosed && sock.isConnected) {
+                val t0 = System.currentTimeMillis()
+                val pingMsg = JSONObject().apply {
+                    put("type", "PING")
+                    put("timestamp", t0)
+                }.toString()
+
+                if (sendRawLine(pingMsg)) {
+                    val latency = (System.currentTimeMillis() - t0).coerceAtLeast(1L)
+                    _lastLatencyMs.value = latency
+                    val updated = current.copy(latencyMs = latency)
+                    _connectionState.value = updated
+                    return@withContext updated
+                } else {
+                    Log.d(TAG, "Existing synced socket ping failed, reconnecting...")
+                    closeActiveSocket()
+                }
+            }
+        }
+
+        _connectionState.value = UsbConnectionState.Connecting("Probing companion on $targetHost:$targetPort...")
+
+        try {
+            val socket = Socket()
+            socket.connect(InetSocketAddress(targetHost, targetPort), 2500)
+            socket.soTimeout = SOCKET_TIMEOUT_MS
+            return@withContext handleEstablishedSocket(socket)
+        } catch (e: Exception) {
+            Log.d(TAG, "Connection probe to $targetHost:$targetPort failed: ${e.message}")
+            val state = UsbConnectionState.Disconnected(
+                "Companion not reached. Ensure replica-companion.exe is running on PC."
+            )
+            _connectionState.value = state
+            return@withContext state
+        }
+    }
 
     private suspend fun handleEstablishedSocket(socket: Socket): UsbConnectionState =
         withContext(Dispatchers.IO) {
+            val sessionId = socketSessionCounter.incrementAndGet()
+
             closeActiveSocket()
             activeSocket = socket
             socketReader = BufferedReader(InputStreamReader(socket.getInputStream(), Charsets.UTF_8))
@@ -210,10 +213,9 @@ class UsbTypingManager(private val context: Context) {
                 port = socket.port
             )
 
-            // Start reader loop
-            startReaderLoop()
+            startReaderLoop(sessionId)
 
-            // Perform handshake
+            // Send HANDSHAKE_SYN
             val synTime = System.currentTimeMillis()
             val syn = JSONObject().apply {
                 put("type", "HANDSHAKE_SYN")
@@ -230,7 +232,7 @@ class UsbTypingManager(private val context: Context) {
                 return@withContext err
             }
 
-            // Wait up to 3 seconds for handshake ACK in reader loop
+            // Await ACK in reader loop up to 3 seconds
             var waited = 0
             while (waited < 30) {
                 val state = _connectionState.value
@@ -242,7 +244,6 @@ class UsbTypingManager(private val context: Context) {
                 waited++
             }
 
-            // Default fallback if no ACK
             val timeoutState = UsbConnectionState.Disconnected(
                 "Handshake timed out. No response from Windows companion."
             )
@@ -251,21 +252,24 @@ class UsbTypingManager(private val context: Context) {
             return@withContext timeoutState
         }
 
-    private fun startReaderLoop() {
+    private fun startReaderLoop(sessionId: Long) {
         readerJob?.cancel()
         readerJob = scope.launch(Dispatchers.IO) {
             try {
                 val reader = socketReader ?: return@launch
-                while (isActive) {
+                while (isActive && socketSessionCounter.get() == sessionId) {
                     val line = reader.readLine() ?: break
                     if (line.isNotBlank()) {
                         processIncomingLine(line)
                     }
                 }
             } catch (e: Exception) {
-                Log.d(TAG, "Socket reader disconnected: ${e.message}")
+                Log.d(TAG, "Socket reader exception [session $sessionId]: ${e.message}")
             } finally {
-                disconnect("Connection closed by host")
+                // Prevent race: only disconnect if this reader is still the active session
+                if (socketSessionCounter.get() == sessionId) {
+                    disconnect("Connection closed by host")
+                }
             }
         }
     }
@@ -278,7 +282,7 @@ class UsbTypingManager(private val context: Context) {
             when (type) {
                 "HANDSHAKE_ACK" -> {
                     val proto = json.optInt("protocolVersion", 1)
-                    val compVersion = json.optString("companionVersion", "1.0.0")
+                    val compVersion = json.optString("companionVersion", "1.1.0")
                     val os = json.optString("os", "Windows")
 
                     if (proto != PROTOCOL_VERSION) {
@@ -378,7 +382,7 @@ class UsbTypingManager(private val context: Context) {
 
                     val ok = sendRawLine(ping)
                     if (ok) {
-                        _lastLatencyMs.value = System.currentTimeMillis() - t0
+                        _lastLatencyMs.value = (System.currentTimeMillis() - t0).coerceAtLeast(1L)
                     } else {
                         disconnect("Heartbeat transmission failed")
                         break
@@ -443,6 +447,7 @@ class UsbTypingManager(private val context: Context) {
         _typingProgress.value = UsbTypingProgress.Idle
     }
 
+    @Synchronized
     private fun sendRawLine(line: String): Boolean {
         return try {
             val writer = socketWriter ?: return false
@@ -476,8 +481,9 @@ class UsbTypingManager(private val context: Context) {
     }
 
     fun cleanup() {
+        autoReconnectJob?.cancel()
         disconnect("Manager destroyed")
-        connectionMonitorJob?.cancel()
+        serverListenerJob?.cancel()
         try {
             serverSocket?.close()
             context.unregisterReceiver(usbReceiver)

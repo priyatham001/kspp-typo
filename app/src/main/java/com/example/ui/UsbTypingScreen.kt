@@ -25,17 +25,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cable
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Computer
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Keyboard
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -43,7 +45,6 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -53,7 +54,6 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -92,12 +92,10 @@ fun UsbTypingScreen(
     val usbTypingProgress by viewModel.usbTypingProgress.collectAsState()
     val companionInfo by viewModel.companionInfo.collectAsState()
     val editorText by viewModel.editorText.collectAsState()
+    val userProfile by viewModel.userProfile.collectAsState()
 
     var isCheckingConnection by remember { mutableStateOf(false) }
     var showHowToUse by remember { mutableStateOf(true) }
-    var showAdvancedSettings by remember { mutableStateOf(false) }
-    var customHostInput by remember { mutableStateOf("127.0.0.1") }
-    var customPortInput by remember { mutableStateOf("8989") }
     var usbDelayMs by remember { mutableFloatStateOf(25f) }
 
     val scrollState = rememberScrollState()
@@ -160,7 +158,7 @@ fun UsbTypingScreen(
             }
         }
 
-        // Connection & Sync Status Card
+        // Main Connection & Sync Status Card
         Card(
             modifier = Modifier
                 .fillMaxWidth()
@@ -177,6 +175,7 @@ fun UsbTypingScreen(
             border = CardDefaults.outlinedCardBorder()
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
+                // Top status bar
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -235,6 +234,47 @@ fun UsbTypingScreen(
                     }
                 }
 
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Detailed Status Chips: Cable, ADB Authorization, Companion, Readiness
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    StatusRowItem(
+                        icon = Icons.Default.Cable,
+                        label = "USB Cable Connection",
+                        value = if (isUsbCableConnected) "Connected" else "Unplugged",
+                        isGood = isUsbCableConnected
+                    )
+                    StatusRowItem(
+                        icon = Icons.Default.Computer,
+                        label = "ADB & Tunnel",
+                        value = if (isSynced) "Authorized (Ports 8989 / 8990)" else "Ensure 'Always allow' is checked",
+                        isGood = isSynced
+                    )
+                    StatusRowItem(
+                        icon = Icons.Default.Sync,
+                        label = "Windows Companion",
+                        value = when (val s = usbState) {
+                            is UsbConnectionState.Synced -> "v${s.companionVersion} Active (${s.latencyMs} ms)"
+                            is UsbConnectionState.Incompatible -> "Incompatible (${s.companionVersion})"
+                            else -> "replica-companion.exe required on PC"
+                        },
+                        isGood = isSynced
+                    )
+                    StatusRowItem(
+                        icon = Icons.Default.Keyboard,
+                        label = "Typing Readiness",
+                        value = if (isSynced) "Ready to stream into PC application" else "Not ready (Sync required)",
+                        isGood = isSynced
+                    )
+                }
+
                 Spacer(modifier = Modifier.height(10.dp))
 
                 // Detail message
@@ -262,8 +302,7 @@ fun UsbTypingScreen(
                         onClick = {
                             scope.launch {
                                 isCheckingConnection = true
-                                val port = customPortInput.toIntOrNull() ?: 8989
-                                viewModel.checkUsbConnection(customHostInput, port)
+                                viewModel.checkUsbConnection()
                                 isCheckingConnection = false
                             }
                         },
@@ -296,105 +335,6 @@ fun UsbTypingScreen(
                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Share .exe")
-                    }
-                }
-
-                // Advanced Connection Settings & ADB Command Toggle
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { showAdvancedSettings = !showAdvancedSettings },
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = if (showAdvancedSettings) "⚙️ Hide Advanced Connection Settings" else "⚙️ Advanced Port / Host Settings",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                AnimatedVisibility(visible = showAdvancedSettings) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 10.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = customHostInput,
-                                onValueChange = { customHostInput = it },
-                                label = { Text("Host / IP", fontSize = 11.sp) },
-                                singleLine = true,
-                                modifier = Modifier.weight(2f)
-                            )
-                            OutlinedTextField(
-                                value = customPortInput,
-                                onValueChange = { customPortInput = it },
-                                label = { Text("Port", fontSize = 11.sp) },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-
-                        // ADB Command Quick Copy Box
-                        Card(
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            ),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
-                                Text(
-                                    text = "ADB Port Forwarding Command (Optional):",
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Text(
-                                    text = "adb reverse tcp:8989 tcp:8989",
-                                    fontFamily = FontFamily.Monospace,
-                                    fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Spacer(modifier = Modifier.height(6.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            val clip = android.content.ClipData.newPlainText("ADB Command", "adb reverse tcp:8989 tcp:8989")
-                                            clipboard.setPrimaryClip(clip)
-                                        },
-                                        modifier = Modifier.height(32.dp)
-                                    ) {
-                                        Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Copy Reverse Cmd", fontSize = 10.sp)
-                                    }
-
-                                    OutlinedButton(
-                                        onClick = {
-                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                            val clip = android.content.ClipData.newPlainText("ADB Forward Command", "adb forward tcp:8989 tcp:8989")
-                                            clipboard.setPrimaryClip(clip)
-                                        },
-                                        modifier = Modifier.height(32.dp)
-                                    ) {
-                                        Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(12.dp))
-                                        Spacer(modifier = Modifier.width(4.dp))
-                                        Text("Copy Forward Cmd", fontSize = 10.sp)
-                                    }
-                                }
-                            }
-                        }
                     }
                 }
             }
@@ -725,7 +665,7 @@ fun UsbTypingScreen(
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            text = "📱 USB Typing — How to Use",
+                            text = "📱 USB Typing Setup & PC Instructions",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -741,12 +681,12 @@ fun UsbTypingScreen(
                 AnimatedVisibility(visible = showHowToUse) {
                     Column(
                         modifier = Modifier.padding(top = 12.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
                         InstructionStep(
                             stepNumber = "1",
-                            title = "Install the Windows Companion",
-                            description = "Download replica-companion.exe and run it on your Windows laptop or PC."
+                            title = "Run Companion on PC",
+                            description = "Run replica-companion.exe on your Windows PC. It listens on port 8989 and auto-configures ADB tunnels."
                         ) {
                             Row(
                                 modifier = Modifier.padding(top = 4.dp),
@@ -775,49 +715,44 @@ fun UsbTypingScreen(
 
                         InstructionStep(
                             stepNumber = "2",
-                            title = "Connect Your Phone",
-                            description = "Connect your Android phone to your PC using a reliable USB data cable."
+                            title = "Plug in USB Cable",
+                            description = "Connect phone to PC using a reliable USB data cable (charge-only cables will not work)."
                         )
 
                         InstructionStep(
                             stepNumber = "3",
-                            title = "Enable USB Debugging",
-                            description = "1. Open Phone Settings -> Developer Options.\n2. Turn on USB Debugging.\n3. Approve the computer RSA authorization prompt on your phone screen."
+                            title = "Enable USB Debugging & Allow Prompt",
+                            description = "1. Open Phone Settings > Developer options > Turn ON USB debugging.\n2. On the popup prompt 'Allow USB debugging?', check 'Always allow from this computer' and tap 'Allow'."
                         )
 
                         InstructionStep(
                             stepNumber = "4",
-                            title = "Open USB Typing",
-                            description = "You're already here! Make sure replica-companion.exe is running in a terminal on your PC."
+                            title = "Open USB Tab & Check Connection",
+                            description = "Open the USB Typing tab in the app and tap 'Check Connection'. The status card turns green: 'SYNCED (READY)'."
                         )
 
                         InstructionStep(
                             stepNumber = "5",
-                            title = "Check Synchronization",
-                            description = "Tap 'Check Connection'. The app verifies handshake & protocol compatibility.\n• ✅ Synced: Communication is verified.\n• 🔄 Connecting: Connection being established.\n• ❌ Disconnected: Check USB cable.\n• ⚠️ Incompatible: Update companion program."
+                            title = "Start Typing to PC",
+                            description = "1. Click inside your target PC app (Notepad, Word, browser, IDE).\n2. Tap 'Start Typing to PC' on your phone.\n3. Keystrokes will be injected at high speed."
                         )
 
-                        InstructionStep(
-                            stepNumber = "6",
-                            title = "Start Typing",
-                            description = "1. Open Notepad on your PC.\n2. Click inside the typing area.\n3. Tap 'Start Typing to PC' on your phone.\n4. Use Pause, Resume, or Stop whenever needed."
-                        )
-
-                        // Troubleshooting notes
+                        // Actionable Troubleshooting Tips
                         Card(
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Column(modifier = Modifier.padding(10.dp)) {
+                            Column(modifier = Modifier.padding(12.dp)) {
                                 Text(
-                                    text = "💡 Troubleshooting Tips:",
+                                    text = "💡 Actionable Troubleshooting Tips:",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 12.sp,
                                     color = MaterialTheme.colorScheme.primary
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
                                 Text(
-                                    text = "• Try another USB data cable or USB port.\n• Make sure USB Debugging is enabled in Developer Options.\n• Run 'adb forward tcp:8989 tcp:8989' if prompted.\n• Ensure replica-companion.exe shows [READY].\n• Important: USB Debugging alone does not make the phone a keyboard—the companion exe is required.",
+                                    text = "• Manual ADB Tunneling: If the companion couldn't find adb.exe automatically, run these commands in CMD/PowerShell:\n    adb reverse tcp:8989 tcp:8989\n    adb forward tcp:8990 tcp:8990\n• Authorization prompt missing? Unplug and replug the USB cable or toggle USB debugging off and on in Developer Options.\n• Windows UAC / Security: Make sure the companion console window is running and not paused by Windows text selection (press Enter in console if paused).\n• Port conflict: The companion listens on 8989 and dials phone on 8990 to prevent collisions.",
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     lineHeight = 16.sp
@@ -828,6 +763,42 @@ fun UsbTypingScreen(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun StatusRowItem(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    value: String,
+    isGood: Boolean
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                modifier = Modifier.size(14.dp),
+                tint = if (isGood) StatusGreen else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Spacer(modifier = Modifier.width(6.dp))
+            Text(
+                text = label,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Text(
+            text = value,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            color = if (isGood) StatusGreen else MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

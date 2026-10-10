@@ -92,7 +92,7 @@ class CompanionManager(private val context: Context) {
 
             if (snapshot != null && snapshot.exists()) {
                 val info = CompanionInfo(
-                    version = snapshot.getString("version") ?: "1.0.1",
+                    version = snapshot.getString("version") ?: "1.1.0",
                     protocolVersion = snapshot.getLong("protocolVersion")?.toInt() ?: 1,
                     minAppVersion = snapshot.getString("minAppVersion") ?: "1.0.0",
                     fileName = snapshot.getString("fileName") ?: "replica-companion.exe",
@@ -113,10 +113,10 @@ class CompanionManager(private val context: Context) {
     }
 
     fun getDefaultCompanionInfo(): CompanionInfo {
-        val size = if (localCompanionFile.exists()) localCompanionFile.length() else 47104L
-        val sha = if (localCompanionFile.exists()) calculateFileSha256(localCompanionFile) else "9ccd84e9ce31e9ecc750047b1b944dd266ae9dcc1e83928a74d5301f82990bd8"
+        val size = if (localCompanionFile.exists() && localCompanionFile.length() > 0) localCompanionFile.length() else 265080L
+        val sha = if (localCompanionFile.exists() && localCompanionFile.length() > 0) calculateFileSha256(localCompanionFile) else "dbf6b872f48b431d897492a094a03f6a27ae9e84b1f1f5fe4110f04326f790df"
         return CompanionInfo(
-            version = "1.0.1",
+            version = "1.1.0",
             protocolVersion = 1,
             minAppVersion = "1.0.0",
             fileName = "replica-companion.exe",

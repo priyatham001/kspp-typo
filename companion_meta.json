@@ -1,11 +1,11 @@
 {
-  "version": "1.0.1",
+  "version": "1.1.0",
   "protocolVersion": 1,
   "minAppVersion": "1.0.0",
   "fileName": "replica-companion.exe",
-  "fileSize": 47104,
-  "sha256": "9ccd84e9ce31e9ecc750047b1b944dd266ae9dcc1e83928a74d5301f82990bd8",
+  "fileSize": 265080,
+  "sha256": "dbf6b872f48b431d897492a094a03f6a27ae9e84b1f1f5fe4110f04326f790df",
   "uploadedBy": "nani68629@gmail.com",
-  "lastUpdated": "2026-10-09T18:20:28.796Z",
-  "releaseNotes": "Updated Windows Companion"
+  "lastUpdated": "2026-10-10T01:10:13.000Z",
+  "releaseNotes": "Updated Windows Companion v1.1.0: multi-threaded typing, ADB auto-tunneling, 2MB receive buffer, Unicode escape decoding, and robust reconnection."
 }

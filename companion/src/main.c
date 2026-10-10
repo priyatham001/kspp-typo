@@ -7,10 +7,11 @@
 #include <string.h>
 #include <stdbool.h>
 
-#define COMPANION_VERSION "1.0.0"
+#define COMPANION_VERSION "1.1.0"
 #define PROTOCOL_VERSION 1
-#define DEFAULT_PORT 8989
-#define BUFFER_SIZE 65536
+#define LISTEN_PORT 8989
+#define PHONE_PORT 8990
+#define BUFFER_SIZE (1024 * 1024 * 2) // 2 MB buffer for large scripts
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -19,7 +20,16 @@ static volatile bool g_typing_active = false;
 static volatile bool g_typing_paused = false;
 static volatile bool g_typing_stop_requested = false;
 
-// Signal handler for graceful exit
+static CRITICAL_SECTION g_send_cs;
+static HANDLE g_typing_thread = NULL;
+
+typedef struct {
+    SOCKET sock;
+    char* text;
+    int delayMs;
+} TypingParams;
+
+// Signal handler for graceful shutdown
 BOOL WINAPI ConsoleHandler(DWORD signal) {
     if (signal == CTRL_C_EVENT || signal == CTRL_CLOSE_EVENT) {
         printf("\n[REPLICA Companion] Shutting down...\n");
@@ -31,14 +41,14 @@ BOOL WINAPI ConsoleHandler(DWORD signal) {
 }
 
 // Emulate typing a UTF-16 character into the active Windows window
-void SendUnicodeChar(wchar_t ch) {
+// Returns true if SendInput succeeded, false otherwise
+bool SendUnicodeChar(wchar_t ch) {
     INPUT inputs[2];
     ZeroMemory(inputs, sizeof(inputs));
 
-    if (ch == L'\r') return; // ignore CR, handle LF as Return
+    if (ch == L'\r') return true; // Ignore CR; handle LF as Return
 
     if (ch == L'\n') {
-        // Virtual Enter key
         inputs[0].type = INPUT_KEYBOARD;
         inputs[0].ki.wVk = VK_RETURN;
         inputs[0].ki.wScan = 0;
@@ -48,12 +58,12 @@ void SendUnicodeChar(wchar_t ch) {
         inputs[1].ki.wVk = VK_RETURN;
         inputs[1].ki.wScan = 0;
         inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-        SendInput(2, inputs, sizeof(INPUT));
-        return;
+
+        UINT sent = SendInput(2, inputs, sizeof(INPUT));
+        return (sent == 2);
     }
 
     if (ch == L'\t') {
-        // Virtual Tab key
         inputs[0].type = INPUT_KEYBOARD;
         inputs[0].ki.wVk = VK_TAB;
         inputs[0].ki.wScan = 0;
@@ -63,8 +73,9 @@ void SendUnicodeChar(wchar_t ch) {
         inputs[1].ki.wVk = VK_TAB;
         inputs[1].ki.wScan = 0;
         inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-        SendInput(2, inputs, sizeof(INPUT));
-        return;
+
+        UINT sent = SendInput(2, inputs, sizeof(INPUT));
+        return (sent == 2);
     }
 
     // Generic Unicode Key Down
@@ -79,7 +90,8 @@ void SendUnicodeChar(wchar_t ch) {
     inputs[1].ki.wScan = ch;
     inputs[1].ki.dwFlags = KEYEVENTF_UNICODE | KEYEVENTF_KEYUP;
 
-    SendInput(2, inputs, sizeof(INPUT));
+    UINT sent = SendInput(2, inputs, sizeof(INPUT));
+    return (sent == 2);
 }
 
 // Convert UTF-8 buffer to UTF-16 wide string
@@ -92,7 +104,34 @@ wchar_t* Utf8ToUtf16(const char* utf8) {
     return wstr;
 }
 
-// Extract JSON string field value (simple parser)
+// Thread-safe message sender
+bool SendMessageLine(SOCKET sock, const char* msg) {
+    char buffer[4096];
+    snprintf(buffer, sizeof(buffer), "%s\n", msg);
+    int len = (int)strlen(buffer);
+
+    EnterCriticalSection(&g_send_cs);
+    int sent = send(sock, buffer, len, 0);
+    LeaveCriticalSection(&g_send_cs);
+
+    return (sent == len);
+}
+
+// Helper to decode a 4-digit hex character sequence into an integer
+static int ParseHex4(const char* s) {
+    int val = 0;
+    for (int i = 0; i < 4; i++) {
+        char c = s[i];
+        val <<= 4;
+        if (c >= '0' && c <= '9') val |= (c - '0');
+        else if (c >= 'a' && c <= 'f') val |= (c - 'a' + 10);
+        else if (c >= 'A' && c <= 'F') val |= (c - 'A' + 10);
+        else return -1;
+    }
+    return val;
+}
+
+// Extract JSON string field value with support for \uXXXX unicode escapes
 bool GetJsonStringField(const char* json, const char* field, char* out, size_t outSize) {
     char search[128];
     snprintf(search, sizeof(search), "\"%s\":", field);
@@ -103,21 +142,61 @@ bool GetJsonStringField(const char* json, const char* field, char* out, size_t o
     while (*pos == ' ' || *pos == '\t') pos++;
 
     if (*pos != '\"') return false;
-    pos++; // skip opening quote
+    pos++; // Skip opening quote
 
     size_t i = 0;
     while (*pos && *pos != '\"' && i < outSize - 1) {
-        if (*pos == '\\' && *(pos + 1)) {
+        if (*pos == '\\') {
             pos++;
-            if (*pos == 'n') out[i++] = '\n';
-            else if (*pos == 'r') out[i++] = '\r';
-            else if (*pos == 't') out[i++] = '\t';
-            else if (*pos == '\"') out[i++] = '\"';
-            else if (*pos == '\\') out[i++] = '\\';
-            else out[i++] = *pos;
-        } else {
-            out[i++] = *pos;
+            if (*pos == 'u') {
+                pos++;
+                int codepoint = ParseHex4(pos);
+                if (codepoint >= 0) {
+                    pos += 4;
+                    // Encode codepoint into UTF-8 bytes
+                    if (codepoint <= 0x7F) {
+                        if (i < outSize - 1) out[i++] = (char)codepoint;
+                    } else if (codepoint <= 0x7FF) {
+                        if (i < outSize - 2) {
+                            out[i++] = (char)(0xC0 | ((codepoint >> 6) & 0x1F));
+                            out[i++] = (char)(0x80 | (codepoint & 0x3F));
+                        }
+                    } else {
+                        if (i < outSize - 3) {
+                            out[i++] = (char)(0xE0 | ((codepoint >> 12) & 0x0F));
+                            out[i++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+                            out[i++] = (char)(0x80 | (codepoint & 0x3F));
+                        }
+                    }
+                    continue;
+                }
+            } else if (*pos == 'n') {
+                out[i++] = '\n';
+                pos++;
+                continue;
+            } else if (*pos == 'r') {
+                out[i++] = '\r';
+                pos++;
+                continue;
+            } else if (*pos == 't') {
+                out[i++] = '\t';
+                pos++;
+                continue;
+            } else if (*pos == '\"') {
+                out[i++] = '\"';
+                pos++;
+                continue;
+            } else if (*pos == '\\') {
+                out[i++] = '\\';
+                pos++;
+                continue;
+            } else if (*pos == '/') {
+                out[i++] = '/';
+                pos++;
+                continue;
+            }
         }
+        out[i++] = *pos;
         pos++;
     }
     out[i] = '\0';
@@ -138,46 +217,58 @@ bool GetJsonIntField(const char* json, const char* field, int* out) {
     return true;
 }
 
-// Send response line over socket
-bool SendMessageLine(SOCKET sock, const char* msg) {
-    char buffer[4096];
-    snprintf(buffer, sizeof(buffer), "%s\n", msg);
-    int len = (int)strlen(buffer);
-    int sent = send(sock, buffer, len, 0);
-    return sent == len;
-}
-
-// Execute typing loop
-void ExecuteTyping(SOCKET clientSock, const char* textToType, int delayMs) {
-    wchar_t* wideText = Utf8ToUtf16(textToType);
-    if (!wideText) {
-        SendMessageLine(clientSock, "{\"type\":\"ERROR\",\"message\":\"UTF-8 decode failed\"}");
-        return;
-    }
-
-    int totalChars = (int)wcslen(wideText);
-    printf("[TYPING] Target length: %d chars. Delay: %d ms.\n", totalChars, delayMs);
-    printf("[TYPING] Typing begins in 1.5s - please ensure the target window is active!\n");
-    Sleep(1500);
+// Background typing thread procedure
+DWORD WINAPI TypingThreadProc(LPVOID lpParam) {
+    TypingParams* params = (TypingParams*)lpParam;
+    SOCKET sock = params->sock;
+    char* text = params->text;
+    int delayMs = params->delayMs;
 
     g_typing_active = true;
     g_typing_paused = false;
     g_typing_stop_requested = false;
 
+    wchar_t* wideText = Utf8ToUtf16(text);
+    if (!wideText) {
+        printf("[TYPING ERROR] Failed to decode UTF-8 text\n");
+        SendMessageLine(sock, "{\"type\":\"ERROR\",\"message\":\"UTF-8 decode failed\"}");
+        g_typing_active = false;
+        free(text);
+        free(params);
+        return 1;
+    }
+
+    int totalChars = (int)wcslen(wideText);
+    printf("[TYPING] Target length: %d chars. Delay: %d ms.\n", totalChars, delayMs);
+    printf("[TYPING] Typing begins in 1.2s - ensure target window is focused!\n");
+    Sleep(1200);
+
     int typedCount = 0;
+    int failedInputCount = 0;
+
     for (int i = 0; i < totalChars; i++) {
         if (!g_running || g_typing_stop_requested) {
-            printf("[TYPING] Typing cancelled by user.\n");
-            SendMessageLine(clientSock, "{\"type\":\"STOPPED\",\"message\":\"Typing cancelled\"}");
+            printf("[TYPING] Typing cancelled by user request.\n");
+            SendMessageLine(sock, "{\"type\":\"STOPPED\",\"message\":\"Typing cancelled\"}");
             break;
         }
 
         while (g_typing_paused && g_running && !g_typing_stop_requested) {
-            Sleep(100);
+            Sleep(50);
+        }
+
+        if (!g_running || g_typing_stop_requested) {
+            SendMessageLine(sock, "{\"type\":\"STOPPED\",\"message\":\"Typing cancelled\"}");
+            break;
         }
 
         wchar_t ch = wideText[i];
-        SendUnicodeChar(ch);
+        if (!SendUnicodeChar(ch)) {
+            failedInputCount++;
+            if (failedInputCount == 1 || failedInputCount % 20 == 0) {
+                printf("[TYPING WARNING] SendInput reported failure (count: %d)\n", failedInputCount);
+            }
+        }
         typedCount++;
 
         // Send progress updates periodically or on last character
@@ -187,25 +278,119 @@ void ExecuteTyping(SOCKET clientSock, const char* textToType, int delayMs) {
             snprintf(progMsg, sizeof(progMsg),
                 "{\"type\":\"PROGRESS\",\"currentIndex\":%d,\"totalChars\":%d,\"percent\":%.2f}",
                 typedCount, totalChars, pct);
-            SendMessageLine(clientSock, progMsg);
+            SendMessageLine(sock, progMsg);
         }
 
         Sleep(delayMs > 0 ? delayMs : 25);
     }
 
     if (!g_typing_stop_requested && typedCount == totalChars) {
-        printf("[TYPING] Completed successfully! (%d chars typed)\n", typedCount);
+        if (failedInputCount > 0) {
+            printf("[TYPING] Completed with %d SendInput warnings. Total typed: %d\n", failedInputCount, typedCount);
+        } else {
+            printf("[TYPING] Completed successfully! (%d chars typed)\n", typedCount);
+        }
         char doneMsg[256];
         snprintf(doneMsg, sizeof(doneMsg), "{\"type\":\"DONE\",\"totalTyped\":%d}", typedCount);
-        SendMessageLine(clientSock, doneMsg);
+        SendMessageLine(sock, doneMsg);
     }
 
     g_typing_active = false;
     free(wideText);
+    free(text);
+    free(params);
+    return 0;
+}
+
+// Check if a file exists
+static bool FileExists(const char* path) {
+    DWORD dwAttrib = GetFileAttributesA(path);
+    return (dwAttrib != INVALID_FILE_ATTRIBUTES && !(dwAttrib & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+// Locate adb.exe or return false
+static bool FindAdbPath(char* outPath, size_t maxLen) {
+    // 1. Check directory next to companion executable
+    char exePath[MAX_PATH];
+    if (GetModuleFileNameA(NULL, exePath, MAX_PATH) > 0) {
+        char* lastSlash = strrchr(exePath, '\\');
+        if (lastSlash) {
+            *lastSlash = '\0';
+            snprintf(outPath, maxLen, "%s\\adb.exe", exePath);
+            if (FileExists(outPath)) return true;
+        }
+    }
+
+    // 2. Check current directory
+    if (FileExists("adb.exe")) {
+        snprintf(outPath, maxLen, "adb.exe");
+        return true;
+    }
+
+    // 3. Check %LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe
+    const char* localApp = getenv("LOCALAPPDATA");
+    if (localApp) {
+        snprintf(outPath, maxLen, "%s\\Android\\Sdk\\platform-tools\\adb.exe", localApp);
+        if (FileExists(outPath)) return true;
+    }
+
+    // 4. Check %ANDROID_HOME%\platform-tools\adb.exe
+    const char* androidHome = getenv("ANDROID_HOME");
+    if (androidHome) {
+        snprintf(outPath, maxLen, "%s\\platform-tools\\adb.exe", androidHome);
+        if (FileExists(outPath)) return true;
+    }
+
+    // 5. Check %ANDROID_SDK_ROOT%\platform-tools\adb.exe
+    const char* sdkRoot = getenv("ANDROID_SDK_ROOT");
+    if (sdkRoot) {
+        snprintf(outPath, maxLen, "%s\\platform-tools\\adb.exe", sdkRoot);
+        if (FileExists(outPath)) return true;
+    }
+
+    // 6. Check system PATH via SearchPathA
+    char searchBuf[MAX_PATH];
+    if (SearchPathA(NULL, "adb.exe", NULL, MAX_PATH, searchBuf, NULL) > 0) {
+        snprintf(outPath, maxLen, "%s", searchBuf);
+        return true;
+    }
+
+    return false;
+}
+
+// Run ADB port forwarding and reversing commands
+static void SetupAdbTunnels(void) {
+    char adbPath[MAX_PATH];
+    printf("[ADB SETUP] Checking for adb...\n");
+    if (FindAdbPath(adbPath, sizeof(adbPath))) {
+        printf("[ADB SETUP] Found ADB at: %s\n", adbPath);
+
+        char cmd1[MAX_PATH + 64];
+        char cmd2[MAX_PATH + 64];
+        snprintf(cmd1, sizeof(cmd1), "\"%s\" reverse tcp:8989 tcp:8989", adbPath);
+        snprintf(cmd2, sizeof(cmd2), "\"%s\" forward tcp:8990 tcp:8990", adbPath);
+
+        printf("[ADB SETUP] Running: %s\n", cmd1);
+        int r1 = system(cmd1);
+        printf("[ADB SETUP] Running: %s\n", cmd2);
+        int r2 = system(cmd2);
+
+        if (r1 == 0 && r2 == 0) {
+            printf("[ADB SETUP] Port tunnels configured successfully!\n");
+        } else {
+            printf("[ADB SETUP] Note: Make sure your Android phone is connected and USB debugging is authorized.\n");
+        }
+    } else {
+        printf("[ADB SETUP] adb.exe was not detected automatically.\n");
+        printf("[ADB SETUP] If auto-connect fails, run these manual commands in cmd/powershell:\n");
+        printf("    adb reverse tcp:8989 tcp:8989\n");
+        printf("    adb forward tcp:8990 tcp:8990\n");
+    }
 }
 
 int main(int argc, char* argv[]) {
-    SetConsoleTitleA("REPLICA Windows Companion v1.0.0");
+    InitializeCriticalSection(&g_send_cs);
+    SetConsoleTitleA("REPLICA Windows Companion v1.1.0");
     SetConsoleCtrlHandler(ConsoleHandler, TRUE);
 
     printf("========================================================\n");
@@ -213,18 +398,8 @@ int main(int argc, char* argv[]) {
     printf("   \"I replicate keyboard\" - USB Auto-Typing Bridge\n");
     printf("========================================================\n");
     printf("[INFO] Protocol version: %d\n", PROTOCOL_VERSION);
-    printf("[INFO] Listening on TCP port %d\n", DEFAULT_PORT);
-
-    // Attempt automatic adb port forwarding for convenience if adb is available
-    printf("[ADB] Attempting automatic USB reverse port forwarding...\n");
-    int adbRes = system("adb reverse tcp:8989 tcp:8989 >nul 2>nul");
-    if (adbRes == 0) {
-        printf("[ADB] -> Successfully configured 'adb reverse tcp:8989 tcp:8989'!\n");
-    } else {
-        printf("[ADB] -> Note: Run 'adb reverse tcp:8989 tcp:8989' or 'adb forward tcp:8989 tcp:8989' if phone is connected via USB cable.\n");
-    }
-
-    printf("[INFO] Connect your Android phone via USB cable and tap 'Check Connection'.\n");
+    printf("[INFO] Listening on TCP port %d\n", LISTEN_PORT);
+    printf("[INFO] Connect Android phone via USB cable and tap 'Check Connection'.\n");
     printf("--------------------------------------------------------\n");
 
     // Initialize Winsock
@@ -235,6 +410,10 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    // Try setting up ADB tunnels
+    SetupAdbTunnels();
+    printf("--------------------------------------------------------\n");
+
     SOCKET listenSock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listenSock == INVALID_SOCKET) {
         printf("[ERROR] socket() failed: %d\n", WSAGetLastError());
@@ -242,7 +421,6 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    // Set reuse address
     int opt = 1;
     setsockopt(listenSock, SOL_SOCKET, SO_REUSEADDR, (const char*)&opt, sizeof(opt));
 
@@ -250,10 +428,10 @@ int main(int argc, char* argv[]) {
     ZeroMemory(&serverAddr, sizeof(serverAddr));
     serverAddr.sin_family = AF_INET;
     serverAddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    serverAddr.sin_port = htons(DEFAULT_PORT);
+    serverAddr.sin_port = htons(LISTEN_PORT);
 
     if (bind(listenSock, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        printf("[ERROR] bind() failed on port %d: %d\n", DEFAULT_PORT, WSAGetLastError());
+        printf("[ERROR] bind() failed on port %d: %d\n", LISTEN_PORT, WSAGetLastError());
         closesocket(listenSock);
         WSACleanup();
         return 1;
@@ -266,7 +444,15 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    printf("[READY] Server ready. Waiting for phone connection...\n");
+    printf("[READY] Server ready. Waiting for phone connection on port %d...\n", LISTEN_PORT);
+
+    char* recvBuf = (char*)malloc(BUFFER_SIZE);
+    if (!recvBuf) {
+        printf("[FATAL] Out of memory for receive buffer\n");
+        closesocket(listenSock);
+        WSACleanup();
+        return 1;
+    }
 
     while (g_running) {
         struct sockaddr_in clientAddr;
@@ -283,25 +469,26 @@ int main(int argc, char* argv[]) {
         inet_ntop(AF_INET, &(clientAddr.sin_addr), clientIp, INET_ADDRSTRLEN);
         printf("\n[CONNECTED] Phone connected from %s:%d\n", clientIp, ntohs(clientAddr.sin_port));
 
-        char recvBuf[BUFFER_SIZE];
         int accumulated = 0;
 
         while (g_running) {
-            int bytesRecv = recv(clientSock, recvBuf + accumulated, (int)(sizeof(recvBuf) - 1 - accumulated), 0);
+            int bytesRecv = recv(clientSock, recvBuf + accumulated, (int)(BUFFER_SIZE - 1 - accumulated), 0);
             if (bytesRecv <= 0) {
                 printf("[DISCONNECTED] Phone disconnected.\n");
+                // If typing was running, signal stop
+                g_typing_stop_requested = true;
                 break;
             }
 
             accumulated += bytesRecv;
             recvBuf[accumulated] = '\0';
 
-            // Process lines (newline delimited JSON)
+            // Process complete lines (newline delimited JSON)
             char* lineStart = recvBuf;
             char* lineEnd;
             while ((lineEnd = strchr(lineStart, '\n')) != NULL) {
                 *lineEnd = '\0';
-                
+
                 // Trim trailing CR
                 if (lineEnd > lineStart && *(lineEnd - 1) == '\r') {
                     *(lineEnd - 1) = '\0';
@@ -327,12 +514,33 @@ int main(int argc, char* argv[]) {
                         SendMessageLine(clientSock, "{\"type\":\"PONG\",\"status\":\"OK\"}");
                     }
                     else if (strcmp(type, "CMD_START") == 0) {
-                        char text[BUFFER_SIZE] = {0};
-                        int delay = 25;
-                        GetJsonStringField(lineStart, "text", text, sizeof(text));
-                        GetJsonIntField(lineStart, "delayMs", &delay);
-                        printf("[COMMAND] START requested. Length: %zu chars, delay: %d ms\n", strlen(text), delay);
-                        ExecuteTyping(clientSock, text, delay);
+                        char* text = (char*)malloc(BUFFER_SIZE);
+                        if (text) {
+                            text[0] = '\0';
+                            int delay = 25;
+                            GetJsonStringField(lineStart, "text", text, BUFFER_SIZE);
+                            GetJsonIntField(lineStart, "delayMs", &delay);
+                            printf("[COMMAND] START requested. Length: %zu chars, delay: %d ms\n", strlen(text), delay);
+
+                            // Cancel any running typing thread
+                            if (g_typing_active) {
+                                g_typing_stop_requested = true;
+                                if (g_typing_thread != NULL) {
+                                    WaitForSingleObject(g_typing_thread, 1000);
+                                    CloseHandle(g_typing_thread);
+                                    g_typing_thread = NULL;
+                                }
+                            }
+
+                            TypingParams* p = (TypingParams*)malloc(sizeof(TypingParams));
+                            p->sock = clientSock;
+                            p->text = text;
+                            p->delayMs = delay;
+
+                            g_typing_thread = CreateThread(NULL, 0, TypingThreadProc, p, 0, NULL);
+                        } else {
+                            SendMessageLine(clientSock, "{\"type\":\"ERROR\",\"message\":\"Out of memory for text payload\"}");
+                        }
                     }
                     else if (strcmp(type, "CMD_PAUSE") == 0) {
                         printf("[COMMAND] PAUSE received.\n");
@@ -374,7 +582,15 @@ int main(int argc, char* argv[]) {
         closesocket(clientSock);
     }
 
+    if (g_typing_thread != NULL) {
+        g_typing_stop_requested = true;
+        WaitForSingleObject(g_typing_thread, 1000);
+        CloseHandle(g_typing_thread);
+    }
+
+    free(recvBuf);
     closesocket(listenSock);
+    DeleteCriticalSection(&g_send_cs);
     WSACleanup();
     printf("[EXIT] Companion terminated.\n");
     return 0;

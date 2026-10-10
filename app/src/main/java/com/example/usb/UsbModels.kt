@@ -45,12 +45,12 @@ sealed class UsbTypingProgress {
 }
 
 data class CompanionInfo(
-    val version: String = "1.0.1",
+    val version: String = "1.1.0",
     val protocolVersion: Int = 1,
     val minAppVersion: String = "1.0.0",
     val fileName: String = "replica-companion.exe",
-    val fileSize: Long = 47104L,
-    val sha256: String? = "9ccd84e9ce31e9ecc750047b1b944dd266ae9dcc1e83928a74d5301f82990bd8",
+    val fileSize: Long = 265080L,
+    val sha256: String? = "dbf6b872f48b431d897492a094a03f6a27ae9e84b1f1f5fe4110f04326f790df",
     val downloadUrl: String = "/download/replica-companion.exe",
     val uploadedBy: String = "admin",
     val lastUpdated: Long = System.currentTimeMillis(),
