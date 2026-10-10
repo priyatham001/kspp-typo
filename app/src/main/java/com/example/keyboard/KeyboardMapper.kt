@@ -40,15 +40,52 @@ data class KeyStroke(
 object KeyboardMapper {
 
     /**
-     * Normalize common unicode variants like smart/curly quotes, en/em dashes, and NBSP
-     * to standard ASCII counterparts.
+     * Normalize common unicode variants like smart/curly quotes, en/em dashes, NBSP,
+     * fullwidth ASCII, accents, and symbols to standard ASCII counterparts.
      */
     fun normalizeChar(char: Char): Char = when (char) {
-        '‘', '’' -> '\''
-        '“', '”' -> '"'
-        '–', '—' -> '-'
-        '\u00A0' -> ' ' // Non-breaking space
+        // Smart single quotes, apostrophes, backticks
+        '‘', '’', '‚', '‛', '′', '‵', '´', '‹', '›' -> '\''
+        // Smart double quotes
+        '“', '”', '„', '‟', '«', '»', '″', '‶' -> '"'
+        // Dashes and hyphens
+        '–', '—', '―', '‒', '‐', '‑', '−' -> '-'
+        // Non-breaking and unicode spaces
+        '\u00A0', '\u2000', '\u2001', '\u2002', '\u2003', '\u2004',
+        '\u2005', '\u2006', '\u2007', '\u2008', '\u2009', '\u200A',
+        '\u202F', '\u205F', '\u3000' -> ' '
+        // Ellipsis
         '…' -> '.'
+        // Bullets and list symbols
+        '•', '◦', '‣', '⁃', '·' -> '*'
+        // Math and programming symbols
+        '×' -> '*'
+        '÷' -> '/'
+        '≠', '¬' -> '!'
+        '≤' -> '<'
+        '≥' -> '>'
+        '±' -> '+'
+        '≈' -> '~'
+        '→', '⇒' -> '>'
+        '←', '⇐' -> '<'
+        '|', '｜' -> '|'
+        // Common accented characters
+        'á', 'à', 'â', 'ä', 'ã', 'å', 'æ' -> 'a'
+        'é', 'è', 'ê', 'ë' -> 'e'
+        'í', 'ì', 'î', 'ï' -> 'i'
+        'ó', 'ò', 'ô', 'ö', 'õ', 'ø' -> 'o'
+        'ú', 'ù', 'û', 'ü' -> 'u'
+        'ñ' -> 'n'
+        'ç' -> 'c'
+        'Á', 'À', 'Â', 'Ä', 'Ã', 'Å', 'Æ' -> 'A'
+        'É', 'È', 'Ê', 'Ë' -> 'E'
+        'Í', 'Ì', 'Î', 'Ï' -> 'I'
+        'Ó', 'Ò', 'Ô', 'Ö', 'Õ', 'Ø' -> 'O'
+        'Ú', 'Ù', 'Û', 'Ü' -> 'U'
+        'Ñ' -> 'N'
+        'Ç' -> 'C'
+        // Fullwidth ASCII range: \uFF01 ('！') to \uFF5E ('～')
+        in '\uFF01'..'\uFF5E' -> (char.code - 0xFEE0).toChar()
         else -> char
     }
 
@@ -146,6 +183,16 @@ object KeyboardMapper {
     }
 
     /**
+     * Safe fallback for any character: returns normalized character if supported,
+     * or a safe substitute (space) so auto-typing never crashes or stalls.
+     */
+    fun fallbackChar(char: Char): Char {
+        val normalized = normalizeChar(char)
+        if (mapChar(normalized) != null) return normalized
+        return ' '
+    }
+
+    /**
      * Replaces unsupported characters with standard equivalents or removes them.
      */
     fun cleanText(text: String): String {
@@ -156,16 +203,7 @@ object KeyboardMapper {
             if (mapChar(normalized) != null) {
                 sb.append(normalized)
             } else {
-                // Approximate or ignore
-                when (char) {
-                    '‘', '’' -> sb.append('\'')
-                    '“', '”' -> sb.append('"')
-                    '–', '—' -> sb.append('-')
-                    '•' -> sb.append('*')
-                    '«', '»' -> sb.append('"')
-                    '‹', '›' -> sb.append('\'')
-                    else -> {} // Drop unsupported glyph
-                }
+                sb.append(' ')
             }
         }
         return sb.toString()

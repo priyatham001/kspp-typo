@@ -63,6 +63,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -655,7 +656,7 @@ fun HomeScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.Speed, contentDescription = "Speed", tint = MaterialTheme.colorScheme.primary)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Keystroke Delay", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                        Text("Keystroke Speed & Delay", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
                     }
 
                     Text(
@@ -667,17 +668,40 @@ fun HomeScreen(
                     )
                 }
 
+                // Speed Throughput & WPM Indicator
+                val speedMetric = remember(typingDelayMs) {
+                    when {
+                        typingDelayMs <= 1L -> "⚡ Turbo Mode: ~1,000 chars/sec (Instant)"
+                        typingDelayMs <= 5L -> "🚀 Super Fast: ~${1000 / typingDelayMs} chars/sec (~${(1000 / typingDelayMs) * 60 / 5} WPM)"
+                        else -> "⏱ Throughput: ~${1000 / typingDelayMs} chars/sec (~${(1000 / typingDelayMs) * 60 / 5} WPM)"
+                    }
+                }
+                Text(
+                    text = speedMetric,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 2.dp)
+                )
+
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // Quick Speed Presets
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    listOf(15L, 25L, 35L, 50L, 75L, 100L).forEach { ms ->
+                    listOf(
+                        1L to "Turbo (1ms)",
+                        5L to "5ms",
+                        15L to "15ms",
+                        30L to "30ms",
+                        50L to "50ms",
+                        80L to "80ms"
+                    ).forEach { (ms, label) ->
                         FilterChip(
                             selected = typingDelayMs == ms,
                             onClick = { viewModel.setTypingDelay(ms) },
-                            label = { Text("${ms}ms", fontSize = 11.sp) },
+                            label = { Text(label, fontSize = 11.sp) },
                             colors = FilterChipDefaults.filterChipColors(
                                 selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
                                 selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -688,26 +712,48 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
+                // Smooth Continuous Slider (1ms to 100ms)
+                Slider(
+                    value = typingDelayMs.toFloat().coerceIn(1f, 100f),
+                    onValueChange = { viewModel.setTypingDelay(it.toLong().coerceIn(1L, 200L)) },
+                    valueRange = 1f..100f,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Fine Adjustment:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        IconButton(
-                            onClick = { viewModel.setTypingDelay((typingDelayMs - 5).coerceAtLeast(5L)) },
-                            modifier = Modifier.size(32.dp),
-                            colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    Text("Fine Tuning:", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        OutlinedButton(
+                            onClick = { viewModel.setTypingDelay((typingDelayMs - 5).coerceAtLeast(1L)) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
                         ) {
-                            Icon(Icons.Default.Remove, contentDescription = "-5ms", modifier = Modifier.size(16.dp))
+                            Text("-5ms", fontSize = 11.sp)
                         }
-                        IconButton(
-                            onClick = { viewModel.setTypingDelay((typingDelayMs + 5).coerceAtMost(500L)) },
-                            modifier = Modifier.size(32.dp),
-                            colors = IconButtonDefaults.iconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                        OutlinedButton(
+                            onClick = { viewModel.setTypingDelay((typingDelayMs - 1).coerceAtLeast(1L)) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = "+5ms", modifier = Modifier.size(16.dp))
+                            Text("-1ms", fontSize = 11.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.setTypingDelay((typingDelayMs + 1).coerceAtMost(500L)) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("+1ms", fontSize = 11.sp)
+                        }
+                        OutlinedButton(
+                            onClick = { viewModel.setTypingDelay((typingDelayMs + 5).coerceAtMost(500L)) },
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                            modifier = Modifier.height(30.dp)
+                        ) {
+                            Text("+5ms", fontSize = 11.sp)
                         }
                     }
                 }

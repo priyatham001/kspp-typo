@@ -25,11 +25,11 @@ function getCompanionMeta() {
     } catch (_) {}
   }
   return {
-    version: '1.1.0',
+    version: '1.0.0',
     protocolVersion: 1,
     minAppVersion: '1.0.0',
     fileName: 'replica-companion.exe',
-    uploadedBy: 'nani68629@gmail.com',
+    uploadedBy: 'admin',
     lastUpdated: new Date().toISOString(),
     releaseNotes: 'Official Windows Companion for USB typing into Windows applications.'
   };
@@ -164,7 +164,7 @@ const server = http.createServer((req, res) => {
         return;
       }
 
-      const version = req.headers['x-companion-version'] || '1.1.0';
+      const version = req.headers['x-companion-version'] || '1.0.1';
       const uploader = req.headers['x-uploader-email'] || 'admin';
       const notes = req.headers['x-release-notes'] || 'Updated Windows Companion';
 

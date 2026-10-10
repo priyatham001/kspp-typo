@@ -66,6 +66,7 @@ fun SettingsScreen(
     val connectedDevice by viewModel.connectedDevice.collectAsState()
     val keepScreenAwake by viewModel.keepScreenAwake.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
+    val typingDelayMs by viewModel.typingDelayMs.collectAsState()
 
     val scrollState = rememberScrollState()
 
@@ -382,6 +383,62 @@ fun SettingsScreen(
                         checked = keepScreenAwake,
                         onCheckedChange = { viewModel.setKeepScreenAwake(it) },
                         modifier = Modifier.testTag("keep_awake_switch")
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Default Typing Speed
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Default Keystroke Delay",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "${typingDelayMs} ms",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                            fontSize = 13.sp
+                        )
+                    }
+                    Text(
+                        text = "Controls character-by-character transmission speed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(1L to "Turbo (1ms)", 5L to "5ms", 15L to "15ms", 30L to "30ms", 50L to "50ms").forEach { (ms, label) ->
+                            androidx.compose.material3.FilterChip(
+                                selected = typingDelayMs == ms,
+                                onClick = { viewModel.setTypingDelay(ms) },
+                                label = { Text(label, fontSize = 11.sp) },
+                                colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(4.dp))
+
+                    androidx.compose.material3.Slider(
+                        value = typingDelayMs.toFloat().coerceIn(1f, 100f),
+                        onValueChange = { viewModel.setTypingDelay(it.toLong().coerceIn(1L, 200L)) },
+                        valueRange = 1f..100f,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
                 // Lock App Now button

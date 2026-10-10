@@ -98,7 +98,7 @@ fun UsbTypingScreen(
 
     var isCheckingConnection by remember { mutableStateOf(false) }
     var showHowToUse by remember { mutableStateOf(true) }
-    var usbDelayMs by remember { mutableFloatStateOf(25f) }
+    var usbDelayMs by remember { mutableFloatStateOf(15f) }
 
     androidx.compose.runtime.LaunchedEffect(Unit) {
         viewModel.usbTypingManager.ensureStarted()
@@ -602,7 +602,7 @@ fun UsbTypingScreen(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // Speed Slider
+                // Speed Controls
                 Column {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -610,23 +610,64 @@ fun UsbTypingScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                             Spacer(modifier = Modifier.width(6.dp))
-                            Text("Keystroke Delay", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            Text("Keystroke Speed & Delay", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                         }
                         Text(
-                            text = "${usbDelayMs.toInt()} ms",
+                            text = "${usbDelayMs.toInt()} ms / char",
                             fontSize = 12.sp,
                             fontFamily = FontFamily.Monospace,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.primary
                         )
                     }
+
+                    val usbSpeedMetric = remember(usbDelayMs) {
+                        when {
+                            usbDelayMs <= 2f -> "⚡ Turbo Mode • ~1000 chars/sec"
+                            usbDelayMs <= 5f -> "🚀 Super Fast • ~${(1000 / usbDelayMs).toInt()} chars/sec (~${((1000 / usbDelayMs) * 60 / 5).toInt()} WPM)"
+                            else -> "⏱ Throughput • ~${(1000 / usbDelayMs).toInt()} chars/sec (~${((1000 / usbDelayMs) * 60 / 5).toInt()} WPM)"
+                        }
+                    }
+                    Text(
+                        text = usbSpeedMetric,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            1f to "Turbo (1ms)",
+                            5f to "5ms",
+                            15f to "15ms",
+                            30f to "30ms",
+                            60f to "60ms"
+                        ).forEach { (ms, label) ->
+                            androidx.compose.material3.FilterChip(
+                                selected = usbDelayMs.toInt() == ms.toInt(),
+                                onClick = { usbDelayMs = ms },
+                                label = { Text(label, fontSize = 11.sp) },
+                                colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                                    selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
                     Slider(
                         value = usbDelayMs,
                         onValueChange = { usbDelayMs = it },
-                        valueRange = 10f..100f,
-                        steps = 8,
+                        valueRange = 1f..100f,
                         modifier = Modifier.fillMaxWidth()
                     )
                 }

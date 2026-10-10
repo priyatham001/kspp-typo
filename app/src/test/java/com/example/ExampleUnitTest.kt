@@ -233,7 +233,7 @@ class ExampleUnitTest {
     @Test
     fun testCompanionInfo_modelDefaults() {
         val info = com.example.usb.CompanionInfo()
-        assertEquals("1.1.0", info.version)
+        assertEquals("1.0.1", info.version)
         assertEquals(1, info.protocolVersion)
         assertEquals("replica-companion.exe", info.fileName)
         assertTrue(info.fileSize > 0)
