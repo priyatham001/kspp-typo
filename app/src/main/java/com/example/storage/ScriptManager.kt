@@ -77,10 +77,7 @@ class ScriptManager(context: Context) {
             ScriptEntity(
                 title = "greeting.txt",
                 language = "text",
-                content = """Hello World!
-
-This is my first test using PSK BT Auto.
-Everything typed here will appear on your Windows PC exactly as physical keystrokes."""
+                content = "hey folks"
             ),
             ScriptEntity(
                 title = "email_draft.txt",
@@ -91,7 +88,7 @@ I would like to submit my lab assignment. Here is my test program:
 
 public class Main {
     public static void main(String[] args) {
-        System.out.println("Hello from CodeTantra!");
+        System.out.println("hey folks");
     }
 }
 

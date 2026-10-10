@@ -358,15 +358,27 @@ static bool FindAdbPath(char* outPath, size_t maxLen) {
     return false;
 }
 
-// Run ADB port forwarding and reversing commands
+// Run ADB port forwarding and reversing commands, and clear any accidental "Wait for debugger" setting on phone
 static void SetupAdbTunnels(void) {
     char adbPath[MAX_PATH];
     printf("[ADB SETUP] Checking for adb...\n");
     if (FindAdbPath(adbPath, sizeof(adbPath))) {
         printf("[ADB SETUP] Found ADB at: %s\n", adbPath);
 
+        char cmdClearDebug[MAX_PATH + 96];
+        char cmdClearWait[MAX_PATH + 96];
+        char cmdClearAm[MAX_PATH + 96];
         char cmd1[MAX_PATH + 64];
         char cmd2[MAX_PATH + 64];
+
+        // Ensure Android does not block replica_kspp on startup with "Waiting For Debugger"
+        snprintf(cmdClearDebug, sizeof(cmdClearDebug), "\"%s\" shell settings delete global debug_app >nul 2>nul", adbPath);
+        snprintf(cmdClearWait, sizeof(cmdClearWait), "\"%s\" shell settings put global wait_for_debugger 0 >nul 2>nul", adbPath);
+        snprintf(cmdClearAm, sizeof(cmdClearAm), "\"%s\" shell am clear-debug-app >nul 2>nul", adbPath);
+        system(cmdClearDebug);
+        system(cmdClearWait);
+        system(cmdClearAm);
+
         snprintf(cmd1, sizeof(cmd1), "\"%s\" reverse tcp:8989 tcp:8989", adbPath);
         snprintf(cmd2, sizeof(cmd2), "\"%s\" forward tcp:8990 tcp:8990", adbPath);
 
@@ -376,13 +388,14 @@ static void SetupAdbTunnels(void) {
         int r2 = system(cmd2);
 
         if (r1 == 0 && r2 == 0) {
-            printf("[ADB SETUP] Port tunnels configured successfully!\n");
+            printf("[ADB SETUP] Port tunnels configured & debugger-wait lock cleared!\n");
         } else {
             printf("[ADB SETUP] Note: Make sure your Android phone is connected and USB debugging is authorized.\n");
         }
     } else {
         printf("[ADB SETUP] adb.exe was not detected automatically.\n");
         printf("[ADB SETUP] If auto-connect fails, run these manual commands in cmd/powershell:\n");
+        printf("    adb shell am clear-debug-app\n");
         printf("    adb reverse tcp:8989 tcp:8989\n");
         printf("    adb forward tcp:8990 tcp:8990\n");
     }

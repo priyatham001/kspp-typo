@@ -81,10 +81,24 @@ class UsbTypingManager(private val context: Context) {
         }
     }
 
+    @Volatile
+    private var isMonitoringActive = false
+
     init {
         registerUsbReceiver()
-        startServerListener()
-        startAutoReconnectLoop()
+    }
+
+    /**
+     * Starts the local TCP listener (port 8990) and background auto-reconnect loop on demand
+     * when the user enters the USB Typing screen or initiates a USB connection check.
+     */
+    @Synchronized
+    fun ensureStarted() {
+        if (!isMonitoringActive) {
+            isMonitoringActive = true
+            startServerListener()
+            startAutoReconnectLoop()
+        }
     }
 
     private fun registerUsbReceiver() {
@@ -159,6 +173,7 @@ class UsbTypingManager(private val context: Context) {
         targetHost: String = "127.0.0.1",
         targetPort: Int = PC_COMPANION_PORT
     ): UsbConnectionState = withContext(Dispatchers.IO) {
+        ensureStarted()
         val current = _connectionState.value
         if (current is UsbConnectionState.Synced) {
             val sock = activeSocket
@@ -481,6 +496,7 @@ class UsbTypingManager(private val context: Context) {
     }
 
     fun cleanup() {
+        isMonitoringActive = false
         autoReconnectJob?.cancel()
         disconnect("Manager destroyed")
         serverListenerJob?.cancel()

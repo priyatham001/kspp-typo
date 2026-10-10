@@ -23,9 +23,10 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Bluetooth hardware is optional so the app can still install/run and use USB Typing on devices without Bluetooth -->
     <uses-feature
         android:name="android.hardware.bluetooth"
-        android:required="true" />
+        android:required="false" />
 
     <application
         android:allowBackup="true"

@@ -250,17 +250,17 @@ export const SettingsScreen: React.FC<SettingsScreenProps> = ({
         </a>
       </div>
 
-      {/* SECTION 3: UNIVERSAL TEXT & CODETANTRA GUIDE */}
+      {/* SECTION 3: UNIVERSAL TEXT & TYPING GUIDE */}
       <div className="bg-[#111827] border border-[#1f293d] rounded-2xl p-4 flex flex-col gap-2.5">
         <div className="flex items-center gap-2 text-cyan-400">
           <BookOpen size={16} />
-          <h3 className="text-sm font-bold">Universal Text &amp; CodeTantra Guide</h3>
+          <h3 className="text-sm font-bold">Universal Text &amp; Typing Guide</h3>
         </div>
         <ol className="text-xs text-gray-400 space-y-1.5 pl-4 list-decimal leading-relaxed">
           <li>Pair Android phone or web host with your Windows laptop via Bluetooth.</li>
           <li>Open REPLICA and verify &quot;🟢 Connected&quot; status.</li>
           <li>Perform the Notepad First Test in Keyboard Test screen.</li>
-          <li>On Windows, click inside target text field (Notepad, CodeTantra editor, form, terminal).</li>
+          <li>On Windows, click inside target text field (Notepad, code editor, form, terminal).</li>
           <li>Paste or load your text/code into the Text Editor.</li>
           <li>Set typing delay (25ms recommended for web editors; 5ms for fast terminal).</li>
           <li>Tap [RUN]. REPLICA streams HID keyboard reports character-by-character.</li>

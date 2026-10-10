@@ -342,7 +342,7 @@ fun HidInfoScreen(
                     "2. Make Discoverable: Tap [Make Discoverable] above on your phone so Windows can see it.",
                     "3. Select Phone: In Windows, select your Android phone and confirm the pairing PIN on both screens.",
                     "4. Driver Installation: Windows will automatically configure your phone as an HID Keyboard.",
-                    "5. Open Target Window: Open Windows Notepad or CodeTantra and click to ensure the cursor is active.",
+                    "5. Open Target Window: Open Windows Notepad or any text editor and click to ensure the cursor is active.",
                     "6. Test Keystrokes: Go to the 'Test' tab in this app and tap keys or 'TEST ALL KEYS' to verify input.",
                     "7. Start Auto-Typing: Go to the 'Editor' tab, load or paste code, and tap [START AUTO-TYPING]."
                 )

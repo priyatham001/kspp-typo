@@ -3,6 +3,7 @@ package com.example.auth
 import android.content.Context
 import android.util.Log
 import com.example.R
+import com.google.firebase.FirebaseApp
 import com.google.firebase.auth.AuthCredential
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseUser
@@ -19,15 +20,13 @@ import kotlinx.coroutines.tasks.await
 private const val TAG = "AuthRepository"
 
 class AuthRepository(
-    private val firestore: FirebaseFirestore,
-    private val auth: FirebaseAuth = FirebaseAuth.getInstance()
+    private val firestore: FirebaseFirestore?,
+    private val auth: FirebaseAuth?
 ) {
 
     constructor(context: Context) : this(
-        firestore = FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        ),
-        auth = FirebaseAuth.getInstance()
+        firestore = initFirestoreSafely(context),
+        auth = initAuthSafely(context)
     )
 
     private val _currentProfile = MutableStateFlow<UserProfile?>(null)
@@ -39,15 +38,61 @@ class AuthRepository(
     private var profileListener: ListenerRegistration? = null
     private var serviceListener: ListenerRegistration? = null
 
-    private val _currentUserFlow = MutableStateFlow<FirebaseUser?>(auth.currentUser)
+    private val _currentUserFlow = MutableStateFlow<FirebaseUser?>(auth?.currentUser)
     val currentUserFlow: StateFlow<FirebaseUser?> = _currentUserFlow.asStateFlow()
 
     val currentUser: FirebaseUser? get() = _currentUserFlow.value
+
+    val isFirebaseConfigured: Boolean get() = auth != null && firestore != null
 
     companion object {
         fun isSuperAdminEmail(email: String?): Boolean {
             return email?.equals("nani68629@gmail.com", ignoreCase = true) == true ||
                    email?.equals("pskcoll68629@gmail.com", ignoreCase = true) == true
+        }
+
+        private fun ensureFirebaseInitialized(context: Context): Boolean {
+            return try {
+                val appContext = context.applicationContext
+                if (FirebaseApp.getApps(appContext).isNotEmpty()) {
+                    true
+                } else {
+                    FirebaseApp.initializeApp(appContext) != null
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "FirebaseApp initialization skipped or unavailable: ${e.message}")
+                false
+            }
+        }
+
+        private fun initFirestoreSafely(context: Context): FirebaseFirestore? {
+            if (!ensureFirebaseInitialized(context)) return null
+            return try {
+                val dbId = context.applicationContext.getString(R.string.firestore_database_id)
+                if (dbId.isNotBlank() && dbId != "(default)") {
+                    FirebaseFirestore.getInstance(dbId)
+                } else {
+                    FirebaseFirestore.getInstance()
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Named Firestore fallback to default instance: ${e.message}")
+                try {
+                    FirebaseFirestore.getInstance()
+                } catch (e2: Exception) {
+                    Log.w(TAG, "FirebaseFirestore unavailable: ${e2.message}")
+                    null
+                }
+            }
+        }
+
+        private fun initAuthSafely(context: Context): FirebaseAuth? {
+            if (!ensureFirebaseInitialized(context)) return null
+            return try {
+                FirebaseAuth.getInstance()
+            } catch (e: Exception) {
+                Log.w(TAG, "FirebaseAuth unavailable: ${e.message}")
+                null
+            }
         }
     }
 
@@ -65,17 +110,24 @@ class AuthRepository(
     }
 
     init {
-        auth.addAuthStateListener(authStateListener)
-        listenToServiceControl()
+        try {
+            auth?.addAuthStateListener(authStateListener)
+            listenToServiceControl()
 
-        auth.currentUser?.let { user ->
-            listenToProfile(user.uid)
+            auth?.currentUser?.let { user ->
+                listenToProfile(user.uid)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "AuthRepository init notice: ${e.message}")
         }
     }
 
     suspend fun signInWithGoogleCredential(credential: AuthCredential): Result<UserProfile> {
+        val activeAuth = auth ?: return Result.failure(
+            IllegalStateException("Firebase Authentication is not configured in this build (missing google-services.json).")
+        )
         return try {
-            val authResult = auth.signInWithCredential(credential).await()
+            val authResult = activeAuth.signInWithCredential(credential).await()
             val firebaseUser = authResult.user ?: throw IllegalStateException("No user returned from Google Sign-In")
 
             val profile = syncUserProfile(firebaseUser)
@@ -89,18 +141,34 @@ class AuthRepository(
     }
 
     private suspend fun syncUserProfile(user: FirebaseUser): UserProfile {
-        val userDocRef = firestore.collection("users").document(user.uid)
-        val snapshot = userDocRef.get().await()
-
         val isOwnerEmail = isSuperAdminEmail(user.email)
         val now = System.currentTimeMillis()
+        val defaultStatus = UserProfile.STATUS_APPROVED
+        val defaultRole = if (isOwnerEmail) UserProfile.ROLE_SUPER_ADMIN else UserProfile.ROLE_USER
+        val defaultExpiresAt = if (isOwnerEmail) 0L else (now + UserProfile.EIGHT_HOURS_MILLIS)
+
+        val activeFirestore = firestore
+        if (activeFirestore == null) {
+            val fallbackProfile = UserProfile(
+                userId = user.uid,
+                displayName = user.displayName ?: "User",
+                email = user.email ?: "",
+                photoUrl = user.photoUrl?.toString(),
+                status = defaultStatus,
+                role = defaultRole,
+                registrationDate = now,
+                lastLogin = now,
+                accessExpiresAt = defaultExpiresAt
+            )
+            _currentProfile.value = fallbackProfile
+            return fallbackProfile
+        }
+
+        val userDocRef = activeFirestore.collection("users").document(user.uid)
+        val snapshot = userDocRef.get().await()
 
         return if (!snapshot.exists()) {
             // New user registration: gets 8-hour access window upon login
-            val defaultStatus = UserProfile.STATUS_APPROVED
-            val defaultRole = if (isOwnerEmail) UserProfile.ROLE_SUPER_ADMIN else UserProfile.ROLE_USER
-            val defaultExpiresAt = if (isOwnerEmail) 0L else (now + UserProfile.EIGHT_HOURS_MILLIS)
-
             val newProfile = UserProfile(
                 userId = user.uid,
                 displayName = user.displayName ?: "User",
@@ -185,37 +253,43 @@ class AuthRepository(
 
     fun listenToProfile(userId: String) {
         profileListener?.remove()
-        profileListener = firestore.collection("users").document(userId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.w(TAG, "Profile snapshot listener: ${error.message}")
-                    return@addSnapshotListener
-                }
+        val activeFirestore = firestore ?: return
+        try {
+            profileListener = activeFirestore.collection("users").document(userId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w(TAG, "Profile snapshot listener: ${error.message}")
+                        return@addSnapshotListener
+                    }
 
-                if (snapshot != null && snapshot.exists()) {
-                    val profile = UserProfile(
-                        userId = snapshot.getString("userId") ?: userId,
-                        displayName = snapshot.getString("displayName") ?: "",
-                        email = snapshot.getString("email") ?: "",
-                        photoUrl = snapshot.getString("photoUrl"),
-                        status = snapshot.getString("status") ?: UserProfile.STATUS_PENDING,
-                        role = snapshot.getString("role") ?: UserProfile.ROLE_USER,
-                        registrationDate = snapshot.getLong("registrationDate") ?: System.currentTimeMillis(),
-                        lastLogin = snapshot.getLong("lastLogin") ?: System.currentTimeMillis(),
-                        accessExpiresAt = snapshot.getLong("accessExpiresAt") ?: 0L,
-                        adminComment = snapshot.getString("adminComment"),
-                        adminCommentBy = snapshot.getString("adminCommentBy"),
-                        adminCommentAt = snapshot.getLong("adminCommentAt") ?: 0L
-                    )
-                    _currentProfile.value = profile
+                    if (snapshot != null && snapshot.exists()) {
+                        val profile = UserProfile(
+                            userId = snapshot.getString("userId") ?: userId,
+                            displayName = snapshot.getString("displayName") ?: "",
+                            email = snapshot.getString("email") ?: "",
+                            photoUrl = snapshot.getString("photoUrl"),
+                            status = snapshot.getString("status") ?: UserProfile.STATUS_PENDING,
+                            role = snapshot.getString("role") ?: UserProfile.ROLE_USER,
+                            registrationDate = snapshot.getLong("registrationDate") ?: System.currentTimeMillis(),
+                            lastLogin = snapshot.getLong("lastLogin") ?: System.currentTimeMillis(),
+                            accessExpiresAt = snapshot.getLong("accessExpiresAt") ?: 0L,
+                            adminComment = snapshot.getString("adminComment"),
+                            adminCommentBy = snapshot.getString("adminCommentBy"),
+                            adminCommentAt = snapshot.getLong("adminCommentAt") ?: 0L
+                        )
+                        _currentProfile.value = profile
+                    }
                 }
-            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to attach profile listener: ${e.message}")
+        }
     }
 
     private fun listenToServiceControl() {
         serviceListener?.remove()
+        val activeFirestore = firestore ?: return
         try {
-            serviceListener = firestore.collection("settings").document("service_control")
+            serviceListener = activeFirestore.collection("settings").document("service_control")
                 .addSnapshotListener { snapshot, error ->
                     if (error != null) {
                         Log.w(TAG, "ServiceControl listener: ${error.message}")
@@ -253,6 +327,7 @@ class AuthRepository(
     }
 
     suspend fun recordAuditLog(log: AuditLog) {
+        val activeFirestore = firestore ?: return
         try {
             val logMap = mapOf(
                 "timestamp" to log.timestamp,
@@ -262,7 +337,7 @@ class AuthRepository(
                 "targetUserId" to log.targetUserId,
                 "result" to log.result
             )
-            firestore.collection("audit_logs").add(logMap).await()
+            activeFirestore.collection("audit_logs").add(logMap).await()
         } catch (e: Exception) {
             Log.w(TAG, "Failed to record audit log: ${e.message}")
         }
@@ -280,7 +355,7 @@ class AuthRepository(
 
         // 2. Clear Firebase Auth session safely
         try {
-            auth.signOut()
+            auth?.signOut()
         } catch (e: Exception) {
             Log.w(TAG, "Error in auth.signOut", e)
         }
@@ -303,10 +378,12 @@ class AuthRepository(
     }
 
     fun cleanup() {
-        auth.removeAuthStateListener(authStateListener)
-        profileListener?.remove()
-        profileListener = null
-        serviceListener?.remove()
-        serviceListener = null
+        try {
+            auth?.removeAuthStateListener(authStateListener)
+            profileListener?.remove()
+            profileListener = null
+            serviceListener?.remove()
+            serviceListener = null
+        } catch (_: Exception) {}
     }
 }

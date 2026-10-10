@@ -92,18 +92,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isSigningIn = MutableStateFlow(false)
     val isSigningIn: StateFlow<Boolean> = _isSigningIn.asStateFlow()
 
-    private val defaultSampleText = """REPLICA - I replicate keyboard
-Hello World!
-
-This is a test message from REPLICA.
-Website: https://example.com
-Command: git status
-
-public class Main {
-    public static void main(String[] args) {
-        System.out.println("Hello CodeTantra & Windows!");
-    }
-}"""
+    private val defaultSampleText = "hey folks"
 
     private val _editorText = MutableStateFlow(defaultSampleText)
     val editorText: StateFlow<String> = _editorText.asStateFlow()
@@ -176,30 +165,45 @@ public class Main {
         }
 
         // 3. Update foreground service notification
+        var isServiceRunning = false
         viewModelScope.launch {
             typingEngine.typingState.collect { state ->
                 when (state) {
                     is TypingState.Typing -> {
+                        isServiceRunning = true
                         val text = "REPLICA: ${state.currentIndex} / ${state.totalChars} (${String.format("%.1f", state.percent)}%)"
                         TypingForegroundService.start(getApplication(), text)
                     }
                     is TypingState.Paused -> {
+                        isServiceRunning = true
                         val text = "Paused: ${state.currentIndex} / ${state.totalChars}"
                         TypingForegroundService.start(getApplication(), text)
                     }
                     is TypingState.Completed -> {
-                        TypingForegroundService.stop(getApplication())
+                        if (isServiceRunning) {
+                            isServiceRunning = false
+                            TypingForegroundService.stop(getApplication())
+                        }
                         _userMessage.value = "Typing completed successfully! (${state.totalChars} characters sent)"
                     }
                     is TypingState.Stopped -> {
-                        TypingForegroundService.stop(getApplication())
+                        if (isServiceRunning) {
+                            isServiceRunning = false
+                            TypingForegroundService.stop(getApplication())
+                        }
                     }
                     is TypingState.Error -> {
-                        TypingForegroundService.stop(getApplication())
+                        if (isServiceRunning) {
+                            isServiceRunning = false
+                            TypingForegroundService.stop(getApplication())
+                        }
                         _userMessage.value = state.message
                     }
                     TypingState.Idle -> {
-                        TypingForegroundService.stop(getApplication())
+                        if (isServiceRunning) {
+                            isServiceRunning = false
+                            TypingForegroundService.stop(getApplication())
+                        }
                     }
                 }
             }

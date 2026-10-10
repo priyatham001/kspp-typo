@@ -3,6 +3,7 @@ package com.example.auth
 import android.content.Context
 import android.util.Log
 import com.example.R
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import kotlinx.coroutines.channels.awaitClose
@@ -13,83 +14,130 @@ import kotlinx.coroutines.tasks.await
 private const val TAG = "AdminRepository"
 
 class AdminRepository(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore?
 ) {
 
     constructor(context: Context) : this(
-        firestore = FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        )
+        firestore = initFirestoreSafely(context)
     )
 
-    fun getAllUsersFlow(): Flow<List<UserProfile>> = callbackFlow {
-        val listener = firestore.collection("users")
-            .orderBy("registrationDate", Query.Direction.DESCENDING)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.w(TAG, "Error fetching users: ${error.message}")
-                    trySend(emptyList())
-                    return@addSnapshotListener
+    companion object {
+        private fun initFirestoreSafely(context: Context): FirebaseFirestore? {
+            return try {
+                val appContext = context.applicationContext
+                if (FirebaseApp.getApps(appContext).isEmpty() && FirebaseApp.initializeApp(appContext) == null) {
+                    return null
                 }
-
-                if (snapshot != null) {
-                    val users = snapshot.documents.mapNotNull { doc ->
-                        UserProfile(
-                            userId = doc.getString("userId") ?: doc.id,
-                            displayName = doc.getString("displayName") ?: "",
-                            email = doc.getString("email") ?: "",
-                            photoUrl = doc.getString("photoUrl"),
-                            status = doc.getString("status") ?: UserProfile.STATUS_PENDING,
-                            role = doc.getString("role") ?: UserProfile.ROLE_USER,
-                            registrationDate = doc.getLong("registrationDate") ?: 0L,
-                            lastLogin = doc.getLong("lastLogin") ?: 0L,
-                            accessExpiresAt = doc.getLong("accessExpiresAt") ?: 0L,
-                            adminComment = doc.getString("adminComment"),
-                            adminCommentBy = doc.getString("adminCommentBy"),
-                            adminCommentAt = doc.getLong("adminCommentAt") ?: 0L
-                        )
-                    }
-                    trySend(users)
+                val dbId = appContext.getString(R.string.firestore_database_id)
+                if (dbId.isNotBlank() && dbId != "(default)") {
+                    FirebaseFirestore.getInstance(dbId)
+                } else {
+                    FirebaseFirestore.getInstance()
+                }
+            } catch (e: Exception) {
+                try {
+                    FirebaseFirestore.getInstance()
+                } catch (e2: Exception) {
+                    Log.w(TAG, "FirebaseFirestore unavailable in AdminRepository: ${e2.message}")
+                    null
                 }
             }
+        }
+    }
 
-        awaitClose { listener.remove() }
+    fun getAllUsersFlow(): Flow<List<UserProfile>> = callbackFlow {
+        val activeFirestore = firestore
+        if (activeFirestore == null) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+        val listener = try {
+            activeFirestore.collection("users")
+                .orderBy("registrationDate", Query.Direction.DESCENDING)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w(TAG, "Error fetching users: ${error.message}")
+                        trySend(emptyList())
+                        return@addSnapshotListener
+                    }
+
+                    if (snapshot != null) {
+                        val users = snapshot.documents.mapNotNull { doc ->
+                            UserProfile(
+                                userId = doc.getString("userId") ?: doc.id,
+                                displayName = doc.getString("displayName") ?: "",
+                                email = doc.getString("email") ?: "",
+                                photoUrl = doc.getString("photoUrl"),
+                                status = doc.getString("status") ?: UserProfile.STATUS_PENDING,
+                                role = doc.getString("role") ?: UserProfile.ROLE_USER,
+                                registrationDate = doc.getLong("registrationDate") ?: 0L,
+                                lastLogin = doc.getLong("lastLogin") ?: 0L,
+                                accessExpiresAt = doc.getLong("accessExpiresAt") ?: 0L,
+                                adminComment = doc.getString("adminComment"),
+                                adminCommentBy = doc.getString("adminCommentBy"),
+                                adminCommentAt = doc.getLong("adminCommentAt") ?: 0L
+                            )
+                        }
+                        trySend(users)
+                    }
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to attach users listener: ${e.message}")
+            trySend(emptyList())
+            null
+        }
+
+        awaitClose { listener?.remove() }
     }
 
     fun getAuditLogsFlow(): Flow<List<AuditLog>> = callbackFlow {
-        val listener = firestore.collection("audit_logs")
-            .orderBy("timestamp", Query.Direction.DESCENDING)
-            .limit(50)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    Log.w(TAG, "Error fetching audit logs: ${error.message}")
-                    trySend(emptyList())
-                    return@addSnapshotListener
-                }
-
-                if (snapshot != null) {
-                    val logs = snapshot.documents.mapNotNull { doc ->
-                        AuditLog(
-                            id = doc.id,
-                            timestamp = doc.getLong("timestamp") ?: 0L,
-                            adminId = doc.getString("adminId") ?: "",
-                            adminEmail = doc.getString("adminEmail") ?: "",
-                            action = doc.getString("action") ?: "",
-                            targetUserId = doc.getString("targetUserId"),
-                            result = doc.getString("result") ?: "SUCCESS"
-                        )
+        val activeFirestore = firestore
+        if (activeFirestore == null) {
+            trySend(emptyList())
+            awaitClose { }
+            return@callbackFlow
+        }
+        val listener = try {
+            activeFirestore.collection("audit_logs")
+                .orderBy("timestamp", Query.Direction.DESCENDING)
+                .limit(50)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        Log.w(TAG, "Error fetching audit logs: ${error.message}")
+                        trySend(emptyList())
+                        return@addSnapshotListener
                     }
-                    trySend(logs)
-                }
-            }
 
-        awaitClose { listener.remove() }
+                    if (snapshot != null) {
+                        val logs = snapshot.documents.mapNotNull { doc ->
+                            AuditLog(
+                                id = doc.id,
+                                timestamp = doc.getLong("timestamp") ?: 0L,
+                                adminId = doc.getString("adminId") ?: "",
+                                adminEmail = doc.getString("adminEmail") ?: "",
+                                action = doc.getString("action") ?: "",
+                                targetUserId = doc.getString("targetUserId"),
+                                result = doc.getString("result") ?: "SUCCESS"
+                            )
+                        }
+                        trySend(logs)
+                    }
+                }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to attach audit logs listener: ${e.message}")
+            trySend(emptyList())
+            null
+        }
+
+        awaitClose { listener?.remove() }
     }
 
     suspend fun approveUser(userId: String, adminId: String, adminEmail: String): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         val newExpiry = System.currentTimeMillis() + UserProfile.EIGHT_HOURS_MILLIS
         return try {
-            firestore.collection("users").document(userId)
+            activeFirestore.collection("users").document(userId)
                 .update(
                     mapOf(
                         "status" to UserProfile.STATUS_APPROVED,
@@ -113,14 +161,15 @@ class AdminRepository(
     }
 
     suspend fun extendUserAccess(userId: String, additionalHours: Int = 8, adminId: String, adminEmail: String): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         return try {
-            val userDoc = firestore.collection("users").document(userId).get().await()
+            val userDoc = activeFirestore.collection("users").document(userId).get().await()
             val currentExpiry = userDoc.getLong("accessExpiresAt") ?: 0L
             val now = System.currentTimeMillis()
             val baseTime = if (currentExpiry > now) currentExpiry else now
             val newExpiry = baseTime + (additionalHours * 60 * 60 * 1000L)
 
-            firestore.collection("users").document(userId)
+            activeFirestore.collection("users").document(userId)
                 .update(
                     mapOf(
                         "status" to UserProfile.STATUS_APPROVED,
@@ -146,14 +195,15 @@ class AdminRepository(
     }
 
     suspend fun decreaseUserAccess(userId: String, subtractHours: Int = 1, adminId: String, adminEmail: String): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         val now = System.currentTimeMillis()
         return try {
-            val snapshot = firestore.collection("users").document(userId).get().await()
+            val snapshot = activeFirestore.collection("users").document(userId).get().await()
             val currentExpiry = snapshot.getLong("accessExpiresAt") ?: now
             val baseTime = if (currentExpiry > now) currentExpiry else now
             val newExpiry = (baseTime - (subtractHours * 60 * 60 * 1000L)).coerceAtLeast(now)
 
-            firestore.collection("users").document(userId)
+            activeFirestore.collection("users").document(userId)
                 .update(
                     mapOf(
                         "accessExpiresAt" to newExpiry
@@ -178,8 +228,9 @@ class AdminRepository(
     }
 
     suspend fun grantPermanentAccess(userId: String, adminId: String, adminEmail: String): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         return try {
-            firestore.collection("users").document(userId)
+            activeFirestore.collection("users").document(userId)
                 .update(
                     mapOf(
                         "status" to UserProfile.STATUS_APPROVED,
@@ -212,9 +263,10 @@ class AdminRepository(
     }
 
     suspend fun restoreUser(userId: String, adminId: String, adminEmail: String): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         val newExpiry = System.currentTimeMillis() + UserProfile.EIGHT_HOURS_MILLIS
         return try {
-            firestore.collection("users").document(userId)
+            activeFirestore.collection("users").document(userId)
                 .update(
                     mapOf(
                         "status" to UserProfile.STATUS_APPROVED,
@@ -242,8 +294,9 @@ class AdminRepository(
     }
 
     suspend fun deleteUser(userId: String, adminId: String, adminEmail: String): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         return try {
-            firestore.collection("users").document(userId).delete().await()
+            activeFirestore.collection("users").document(userId).delete().await()
             recordAuditLog(
                 AuditLog(
                     timestamp = System.currentTimeMillis(),
@@ -268,8 +321,9 @@ class AdminRepository(
         adminId: String,
         adminEmail: String
     ): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         return try {
-            firestore.collection("users").document(userId)
+            activeFirestore.collection("users").document(userId)
                 .update("status", newStatus)
                 .await()
 
@@ -291,9 +345,10 @@ class AdminRepository(
     }
 
     suspend fun updateUserComment(userId: String, comment: String, adminId: String, adminEmail: String): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         val now = System.currentTimeMillis()
         return try {
-            firestore.collection("users").document(userId)
+            activeFirestore.collection("users").document(userId)
                 .update(
                     mapOf(
                         "adminComment" to comment.trim(),
@@ -325,6 +380,7 @@ class AdminRepository(
         adminEmail: String,
         customMessage: String? = null
     ): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         val (enabled, maintenance) = when (mode.uppercase()) {
             "MAINTENANCE" -> true to true
             "DISABLED" -> false to false
@@ -347,7 +403,7 @@ class AdminRepository(
                 "updatedAt" to System.currentTimeMillis()
             )
 
-            firestore.collection("settings").document("service_control")
+            activeFirestore.collection("settings").document("service_control")
                 .set(data)
                 .await()
 
@@ -374,9 +430,10 @@ class AdminRepository(
         adminId: String,
         adminEmail: String
     ): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         val now = System.currentTimeMillis()
         return try {
-            firestore.collection("settings").document("service_control")
+            activeFirestore.collection("settings").document("service_control")
                 .update(
                     mapOf(
                         "broadcastTitle" to title.trim(),
@@ -407,9 +464,10 @@ class AdminRepository(
         adminId: String,
         adminEmail: String
     ): Result<Unit> {
+        val activeFirestore = firestore ?: return Result.failure(IllegalStateException("Firestore unavailable"))
         val now = System.currentTimeMillis()
         return try {
-            firestore.collection("settings").document("service_control")
+            activeFirestore.collection("settings").document("service_control")
                 .update(
                     mapOf(
                         "broadcastTitle" to null,
@@ -437,6 +495,7 @@ class AdminRepository(
     }
 
     private suspend fun recordAuditLog(log: AuditLog) {
+        val activeFirestore = firestore ?: return
         try {
             val logMap = mapOf(
                 "timestamp" to log.timestamp,
@@ -446,7 +505,7 @@ class AdminRepository(
                 "targetUserId" to log.targetUserId,
                 "result" to log.result
             )
-            firestore.collection("audit_logs").add(logMap).await()
+            activeFirestore.collection("audit_logs").add(logMap).await()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to record admin audit log", e)
         }

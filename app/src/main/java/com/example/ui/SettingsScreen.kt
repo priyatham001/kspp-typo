@@ -397,7 +397,7 @@ fun SettingsScreen(
             }
         }
 
-        // Section 3: Universal Text & CodeTantra Testing Guide
+        // Section 3: Universal Text & Typing Guide
         Card(
             modifier = Modifier.fillMaxWidth(),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -406,7 +406,7 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 Text(
-                    text = "Universal Text & CodeTantra Guide",
+                    text = "Universal Text & Typing Guide",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.primary
@@ -418,7 +418,7 @@ fun SettingsScreen(
                     "1. Pair Android phone with Windows laptop via Bluetooth.",
                     "2. Open PSK BT Auto, authenticate with your Owner Passcode, and verify '🟢 Connected' status.",
                     "3. Perform the Notepad First Test in Keyboard Test screen.",
-                    "4. On Windows, click inside ANY target text field (Notepad, CodeTantra editor, browser form, terminal, word processor).",
+                    "4. On Windows, click inside ANY target text field (Notepad, code editor, browser form, terminal, word processor).",
                     "5. In PSK BT Auto, paste or load any text, document, notes, commands, or code into the Text Editor.",
                     "6. Set typing delay (30ms recommended for web editors; 5ms for fast terminal typing).",
                     "7. Tap [TYPE]. PSK BT Auto streams HID keyboard reports character-by-character.",

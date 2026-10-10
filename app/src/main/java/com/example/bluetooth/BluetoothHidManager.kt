@@ -189,11 +189,19 @@ class BluetoothHidManager(private val context: Context) {
     }
 
     init {
-        val filter = IntentFilter().apply {
-            addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
-            addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+        try {
+            val filter = IntentFilter().apply {
+                addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
+                addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(bluetoothReceiver, filter)
+            }
+        } catch (e: Exception) {
+            Log.w(tag, "Failed to register Bluetooth receiver: ${e.message}")
         }
-        context.registerReceiver(bluetoothReceiver, filter)
     }
 
     /**

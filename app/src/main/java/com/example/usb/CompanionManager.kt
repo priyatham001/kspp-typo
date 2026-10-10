@@ -6,14 +6,17 @@ import android.net.Uri
 import android.util.Log
 import androidx.core.content.FileProvider
 import com.example.R
+import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
 import java.net.HttpURLConnection
@@ -24,20 +27,44 @@ private const val TAG = "CompanionManager"
 
 class CompanionManager(private val context: Context) {
 
-    private val firestore by lazy {
+    private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    private val firestore: FirebaseFirestore? by lazy {
         try {
-            val dbId = context.applicationContext.getString(R.string.firestore_database_id)
-            FirebaseFirestore.getInstance(dbId)
+            val appContext = context.applicationContext
+            if (FirebaseApp.getApps(appContext).isEmpty() && FirebaseApp.initializeApp(appContext) == null) {
+                null
+            } else {
+                val dbId = appContext.getString(R.string.firestore_database_id)
+                if (dbId.isNotBlank() && dbId != "(default)") {
+                    FirebaseFirestore.getInstance(dbId)
+                } else {
+                    FirebaseFirestore.getInstance()
+                }
+            }
         } catch (e: Exception) {
-            FirebaseFirestore.getInstance()
+            try {
+                FirebaseFirestore.getInstance()
+            } catch (e2: Exception) {
+                Log.w(TAG, "FirebaseFirestore unavailable in CompanionManager: ${e2.message}")
+                null
+            }
         }
     }
 
     private val companionDir = File(context.filesDir, "companion").apply { mkdirs() }
     val localCompanionFile = File(companionDir, "replica-companion.exe")
 
+    @Volatile
+    private var cachedSha256: String? = null
+
     init {
-        ensureLocalCompanionExtracted()
+        ioScope.launch {
+            ensureLocalCompanionExtracted()
+            if (localCompanionFile.exists() && localCompanionFile.length() > 0) {
+                cachedSha256 = calculateFileSha256(localCompanionFile)
+            }
+        }
     }
 
     /**
@@ -82,39 +109,51 @@ class CompanionManager(private val context: Context) {
      * Real-time Flow of Companion metadata from Firestore.
      */
     fun getCompanionInfoFlow(): Flow<CompanionInfo> = callbackFlow {
-        val docRef = firestore.collection("settings").document("windows_companion")
-        val listener = docRef.addSnapshotListener { snapshot, error ->
-            if (error != null) {
-                Log.w(TAG, "Firestore error reading companion config: ${error.message}")
-                trySend(getDefaultCompanionInfo())
-                return@addSnapshotListener
-            }
+        val activeFirestore = firestore
+        if (activeFirestore == null) {
+            trySend(getDefaultCompanionInfo())
+            awaitClose { }
+            return@callbackFlow
+        }
+        val listener = try {
+            val docRef = activeFirestore.collection("settings").document("windows_companion")
+            docRef.addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    Log.w(TAG, "Firestore error reading companion config: ${error.message}")
+                    trySend(getDefaultCompanionInfo())
+                    return@addSnapshotListener
+                }
 
-            if (snapshot != null && snapshot.exists()) {
-                val info = CompanionInfo(
-                    version = snapshot.getString("version") ?: "1.1.0",
-                    protocolVersion = snapshot.getLong("protocolVersion")?.toInt() ?: 1,
-                    minAppVersion = snapshot.getString("minAppVersion") ?: "1.0.0",
-                    fileName = snapshot.getString("fileName") ?: "replica-companion.exe",
-                    fileSize = snapshot.getLong("fileSize") ?: localCompanionFile.length(),
-                    sha256 = snapshot.getString("sha256") ?: calculateFileSha256(localCompanionFile),
-                    downloadUrl = snapshot.getString("downloadUrl") ?: "/download/replica-companion.exe",
-                    uploadedBy = snapshot.getString("uploadedBy") ?: "admin",
-                    lastUpdated = snapshot.getLong("lastUpdated") ?: System.currentTimeMillis(),
-                    releaseNotes = snapshot.getString("releaseNotes") ?: "Official Windows companion program"
-                )
-                trySend(info)
-            } else {
-                trySend(getDefaultCompanionInfo())
+                if (snapshot != null && snapshot.exists()) {
+                    val info = CompanionInfo(
+                        version = snapshot.getString("version") ?: "1.1.0",
+                        protocolVersion = snapshot.getLong("protocolVersion")?.toInt() ?: 1,
+                        minAppVersion = snapshot.getString("minAppVersion") ?: "1.0.0",
+                        fileName = snapshot.getString("fileName") ?: "replica-companion.exe",
+                        fileSize = snapshot.getLong("fileSize") ?: localCompanionFile.length(),
+                        sha256 = snapshot.getString("sha256") ?: (cachedSha256 ?: "5f21da4ef77d87d493c0b81c68d53927933a79c89716862e48da943b4e27a6f5"),
+                        downloadUrl = snapshot.getString("downloadUrl") ?: "/download/replica-companion.exe",
+                        uploadedBy = snapshot.getString("uploadedBy") ?: "admin",
+                        lastUpdated = snapshot.getLong("lastUpdated") ?: System.currentTimeMillis(),
+                        releaseNotes = snapshot.getString("releaseNotes") ?: "Official Windows companion program"
+                    )
+                    trySend(info)
+                } else {
+                    trySend(getDefaultCompanionInfo())
+                }
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to attach companion listener: ${e.message}")
+            trySend(getDefaultCompanionInfo())
+            null
         }
 
-        awaitClose { listener.remove() }
+        awaitClose { listener?.remove() }
     }
 
     fun getDefaultCompanionInfo(): CompanionInfo {
         val size = if (localCompanionFile.exists() && localCompanionFile.length() > 0) localCompanionFile.length() else 265080L
-        val sha = if (localCompanionFile.exists() && localCompanionFile.length() > 0) calculateFileSha256(localCompanionFile) else "dbf6b872f48b431d897492a094a03f6a27ae9e84b1f1f5fe4110f04326f790df"
+        val sha = cachedSha256 ?: "5f21da4ef77d87d493c0b81c68d53927933a79c89716862e48da943b4e27a6f5"
         return CompanionInfo(
             version = "1.1.0",
             protocolVersion = 1,
@@ -207,6 +246,7 @@ class CompanionManager(private val context: Context) {
             // Save to local file
             FileOutputStream(localCompanionFile).use { it.write(bytes) }
             val sha256 = calculateFileSha256(localCompanionFile)
+            cachedSha256 = sha256
 
             val updatedInfo = CompanionInfo(
                 version = version.ifBlank { "1.0.1" },
@@ -223,8 +263,8 @@ class CompanionManager(private val context: Context) {
 
             // Save to Firestore
             try {
-                firestore.collection("settings").document("windows_companion")
-                    .set(
+                firestore?.collection("settings")?.document("windows_companion")
+                    ?.set(
                         mapOf(
                             "version" to updatedInfo.version,
                             "protocolVersion" to updatedInfo.protocolVersion,
@@ -237,7 +277,7 @@ class CompanionManager(private val context: Context) {
                             "lastUpdated" to updatedInfo.lastUpdated,
                             "releaseNotes" to updatedInfo.releaseNotes
                         )
-                    ).await()
+                    )?.await()
             } catch (e: Exception) {
                 Log.w(TAG, "Firestore write warning: ${e.message}")
             }

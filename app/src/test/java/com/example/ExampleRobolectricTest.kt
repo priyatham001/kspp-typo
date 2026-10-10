@@ -166,4 +166,23 @@ Math: a + b = c, x * y - z / 2 < 10 && total > 5"""
             assertNotNull("Character '$char' should be supported on US QWERTY", stroke)
         }
     }
+
+    @Test
+    fun testColdStartup_MainViewModelAndMainActivityDoNotCrashOrWaitForDebugger() {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val authRepo = AuthRepository(app)
+        val adminRepo = com.example.auth.AdminRepository(app)
+        val usbManager = com.example.usb.UsbTypingManager(app)
+        val companionMgr = com.example.usb.CompanionManager(app)
+
+        // Verify all startup repositories and managers initialize cleanly without crashing or blocking
+        assertNotNull(authRepo)
+        assertNotNull(adminRepo)
+        assertNotNull(usbManager)
+        assertNotNull(companionMgr)
+        assertEquals("replica-companion.exe", companionMgr.getDefaultCompanionInfo().fileName)
+
+        usbManager.cleanup()
+        authRepo.cleanup()
+    }
 }

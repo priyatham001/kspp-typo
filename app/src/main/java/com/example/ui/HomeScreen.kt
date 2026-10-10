@@ -440,7 +440,7 @@ fun HomeScreen(
                         .testTag("editor_text_input"),
                     placeholder = {
                         Text(
-                            "Type, paste, or load text/code to type into Windows Notepad, CodeTantra, or any editor...",
+                            "Type, paste, or load text/code to type into Windows Notepad or any editor...",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )
@@ -484,10 +484,10 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Actions row: Save, Saved, Clear, Sample (Clean, responsive, no popup dialogs)
+                // Actions row: Save, Saved, Paste, Clear, Sample with clear labels
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     Button(
                         onClick = {
@@ -497,11 +497,14 @@ fun HomeScreen(
                             .weight(1f)
                             .testTag("save_text_button"),
                         shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
-                        Icon(Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Save", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Save", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
                     }
 
                     FilledTonalButton(
@@ -509,11 +512,14 @@ fun HomeScreen(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("load_text_button"),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Icon(Icons.Default.FolderOpen, contentDescription = "Saved", modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Saved", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.FolderOpen, contentDescription = "Saved", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Saved", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                        }
                     }
 
                     OutlinedButton(
@@ -532,11 +538,14 @@ fun HomeScreen(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("paste_text_button"),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Icon(Icons.Default.ContentPaste, contentDescription = "Paste", modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Paste", fontSize = 12.sp)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Paste", fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
                     }
 
                     OutlinedButton(
@@ -547,11 +556,14 @@ fun HomeScreen(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("clear_text_button"),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(15.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Clear", fontSize = 12.sp)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Clear", fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
                     }
 
                     OutlinedButton(
@@ -559,9 +571,14 @@ fun HomeScreen(
                         modifier = Modifier
                             .weight(1f)
                             .testTag("sample_text_button"),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(10.dp)
                     ) {
-                        Text("Sample", fontSize = 12.sp)
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.TextFields, contentDescription = "Demo", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Demo", fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
                     }
                 }
 

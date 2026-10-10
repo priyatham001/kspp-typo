@@ -34,10 +34,12 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Save
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -97,6 +99,10 @@ fun UsbTypingScreen(
     var isCheckingConnection by remember { mutableStateOf(false) }
     var showHowToUse by remember { mutableStateOf(true) }
     var usbDelayMs by remember { mutableFloatStateOf(25f) }
+
+    androidx.compose.runtime.LaunchedEffect(Unit) {
+        viewModel.usbTypingManager.ensureStarted()
+    }
 
     val scrollState = rememberScrollState()
 
@@ -505,6 +511,77 @@ fun UsbTypingScreen(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                // Labeled Action Buttons Row below editor: Save, Paste, Clear, Demo
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = {
+                            viewModel.saveCurrentScript(viewModel.editorTitle.value)
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Save, contentDescription = "Save", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Save", fontSize = 11.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val clip = clipboard.primaryClip
+                            if (clip != null && clip.itemCount > 0) {
+                                val pasteText = clip.getItemAt(0).coerceToText(context).toString()
+                                if (pasteText.isNotEmpty()) {
+                                    viewModel.updateEditorText(pasteText)
+                                }
+                            }
+                        },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.ContentPaste, contentDescription = "Paste", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Paste", fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.clearEditor() },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Clear", fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
+                    }
+
+                    OutlinedButton(
+                        onClick = { viewModel.loadSampleText() },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(10.dp),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp)
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(Icons.Default.TextFields, contentDescription = "Demo", modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text("Demo", fontSize = 11.sp, fontWeight = FontWeight.Medium, maxLines = 1)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 // Stats row
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -721,8 +798,8 @@ fun UsbTypingScreen(
 
                         InstructionStep(
                             stepNumber = "3",
-                            title = "Enable USB Debugging & Allow Prompt",
-                            description = "1. Open Phone Settings > Developer options > Turn ON USB debugging.\n2. On the popup prompt 'Allow USB debugging?', check 'Always allow from this computer' and tap 'Allow'."
+                            title = "Enable USB Debugging (Keep 'Wait for debugger' OFF)",
+                            description = "1. Open Phone Settings > Developer options > Turn ON USB debugging.\n2. Ensure 'Wait for debugger' is OFF and 'Select debug app' is set to Nothing.\n3. On the popup 'Allow USB debugging?', check 'Always allow from this computer' and tap 'Allow'."
                         )
 
                         InstructionStep(

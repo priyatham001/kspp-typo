@@ -116,11 +116,9 @@ class TypingForegroundService : Service {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, TypingForegroundService::class.java).apply {
-                action = ACTION_STOP_SERVICE
-            }
+            val intent = Intent(context, TypingForegroundService::class.java)
             try {
-                context.startService(intent)
+                context.stopService(intent)
             } catch (_: Exception) {}
         }
     }

@@ -132,7 +132,7 @@ int main() {
 }"""
     ),
     BuiltInProgram(
-        title = "CodeTantra Lab - OOP & Threads",
+        title = "Java Lab - OOP & Threads",
         language = "JAVA",
         description = "Java multithreading & synchronization lab exercise",
         code = """import java.util.*;
@@ -155,7 +155,7 @@ class WorkerThread extends Thread {
 
 public class Main {
     public static void main(String[] args) throws InterruptedException {
-        System.out.println("Starting CodeTantra Thread Lab...");
+        System.out.println("Starting Thread Lab...");
         List<WorkerThread> threads = new ArrayList<>();
         for (int i = 1; i <= 3; i++) {
             WorkerThread t = new WorkerThread(i);
@@ -761,26 +761,50 @@ fun ScriptCard(
                     )
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Button(
                         onClick = onLoad,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.height(34.dp)
+                        modifier = Modifier.height(36.dp)
                     ) {
                         Text("LOAD", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
 
-                    IconButton(onClick = onDuplicate, modifier = Modifier.size(34.dp)) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onDuplicate() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
                         Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Text("Copy", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
-                    IconButton(onClick = onRename, modifier = Modifier.size(34.dp)) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onRename() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
                         Icon(Icons.Default.Edit, contentDescription = "Rename", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                        Text("Rename", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
 
-                    IconButton(onClick = onDelete, modifier = Modifier.size(34.dp)) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .clickable { onDelete() }
+                            .padding(horizontal = 4.dp, vertical = 2.dp)
+                    ) {
                         Icon(Icons.Default.Delete, contentDescription = "Delete", tint = ErrorRed, modifier = Modifier.size(16.dp))
+                        Text("Delete", fontSize = 9.sp, color = ErrorRed)
                     }
                 }
             }

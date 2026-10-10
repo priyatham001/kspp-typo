@@ -374,7 +374,7 @@ fun KeyboardTestScreen(
 
                 val steps = listOf(
                     "1. Connect REPLICA to your Windows laptop via Bluetooth.",
-                    "2. Open Windows Notepad (notepad.exe) or CodeTantra.",
+                    "2. Open Windows Notepad (notepad.exe) or any text editor.",
                     "3. Click inside the window so the text cursor is blinking.",
                     "4. In this Virtual Keyboard screen, tap letter, number, navigation, and symbol keys.",
                     "5. Press [TEST ALL KEYS] to verify complete US QWERTY mapping.",
