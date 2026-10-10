@@ -179,30 +179,45 @@ public class Main {
         }
 
         // 3. Update foreground service notification
+        var wasForegroundServiceRunning = false
         viewModelScope.launch {
             typingEngine.typingState.collect { state ->
                 when (state) {
                     is TypingState.Typing -> {
+                        wasForegroundServiceRunning = true
                         val text = "REPLICA: ${state.currentIndex} / ${state.totalChars} (${String.format("%.1f", state.percent)}%)"
                         TypingForegroundService.start(getApplication(), text)
                     }
                     is TypingState.Paused -> {
+                        wasForegroundServiceRunning = true
                         val text = "Paused: ${state.currentIndex} / ${state.totalChars}"
                         TypingForegroundService.start(getApplication(), text)
                     }
                     is TypingState.Completed -> {
-                        TypingForegroundService.stop(getApplication())
+                        if (wasForegroundServiceRunning) {
+                            wasForegroundServiceRunning = false
+                            TypingForegroundService.stop(getApplication())
+                        }
                         _userMessage.value = "Typing completed successfully! (${state.totalChars} characters sent)"
                     }
                     is TypingState.Stopped -> {
-                        TypingForegroundService.stop(getApplication())
+                        if (wasForegroundServiceRunning) {
+                            wasForegroundServiceRunning = false
+                            TypingForegroundService.stop(getApplication())
+                        }
                     }
                     is TypingState.Error -> {
-                        TypingForegroundService.stop(getApplication())
+                        if (wasForegroundServiceRunning) {
+                            wasForegroundServiceRunning = false
+                            TypingForegroundService.stop(getApplication())
+                        }
                         _userMessage.value = state.message
                     }
                     TypingState.Idle -> {
-                        TypingForegroundService.stop(getApplication())
+                        if (wasForegroundServiceRunning) {
+                            wasForegroundServiceRunning = false
+                            TypingForegroundService.stop(getApplication())
+                        }
                     }
                 }
             }

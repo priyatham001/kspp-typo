@@ -13,17 +13,27 @@ import kotlinx.coroutines.tasks.await
 private const val TAG = "AdminRepository"
 
 class AdminRepository(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore?
 ) {
 
     constructor(context: Context) : this(
-        firestore = FirebaseFirestore.getInstance(
-            context.applicationContext.getString(R.string.firestore_database_id)
-        )
+        firestore = try {
+            val dbId = context.applicationContext.getString(R.string.firestore_database_id)
+            FirebaseFirestore.getInstance(dbId)
+        } catch (e: Exception) {
+            Log.w(TAG, "FirebaseFirestore not initialized yet in AdminRepository: ${e.message}")
+            null
+        }
     )
 
     fun getAllUsersFlow(): Flow<List<UserProfile>> = callbackFlow {
-        val listener = firestore.collection("users")
+        val db = firestore
+        if (db == null) {
+            trySend(emptyList())
+            awaitClose {}
+            return@callbackFlow
+        }
+        val listener = db.collection("users")
             .orderBy("registrationDate", Query.Direction.DESCENDING)
             .addSnapshotListener { snapshot, error ->
                 if (error != null) {
@@ -57,7 +67,13 @@ class AdminRepository(
     }
 
     fun getAuditLogsFlow(): Flow<List<AuditLog>> = callbackFlow {
-        val listener = firestore.collection("audit_logs")
+        val db = firestore
+        if (db == null) {
+            trySend(emptyList())
+            awaitClose {}
+            return@callbackFlow
+        }
+        val listener = db.collection("audit_logs")
             .orderBy("timestamp", Query.Direction.DESCENDING)
             .limit(50)
             .addSnapshotListener { snapshot, error ->
@@ -87,9 +103,10 @@ class AdminRepository(
     }
 
     suspend fun approveUser(userId: String, adminId: String, adminEmail: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         val newExpiry = System.currentTimeMillis() + UserProfile.EIGHT_HOURS_MILLIS
         return try {
-            firestore.collection("users").document(userId)
+            db.collection("users").document(userId)
                 .update(
                     mapOf(
                         "status" to UserProfile.STATUS_APPROVED,
@@ -113,14 +130,15 @@ class AdminRepository(
     }
 
     suspend fun extendUserAccess(userId: String, additionalHours: Int = 8, adminId: String, adminEmail: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         return try {
-            val userDoc = firestore.collection("users").document(userId).get().await()
+            val userDoc = db.collection("users").document(userId).get().await()
             val currentExpiry = userDoc.getLong("accessExpiresAt") ?: 0L
             val now = System.currentTimeMillis()
             val baseTime = if (currentExpiry > now) currentExpiry else now
             val newExpiry = baseTime + (additionalHours * 60 * 60 * 1000L)
 
-            firestore.collection("users").document(userId)
+            db.collection("users").document(userId)
                 .update(
                     mapOf(
                         "status" to UserProfile.STATUS_APPROVED,
@@ -146,14 +164,15 @@ class AdminRepository(
     }
 
     suspend fun decreaseUserAccess(userId: String, subtractHours: Int = 1, adminId: String, adminEmail: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         val now = System.currentTimeMillis()
         return try {
-            val snapshot = firestore.collection("users").document(userId).get().await()
+            val snapshot = db.collection("users").document(userId).get().await()
             val currentExpiry = snapshot.getLong("accessExpiresAt") ?: now
             val baseTime = if (currentExpiry > now) currentExpiry else now
             val newExpiry = (baseTime - (subtractHours * 60 * 60 * 1000L)).coerceAtLeast(now)
 
-            firestore.collection("users").document(userId)
+            db.collection("users").document(userId)
                 .update(
                     mapOf(
                         "accessExpiresAt" to newExpiry
@@ -178,8 +197,9 @@ class AdminRepository(
     }
 
     suspend fun grantPermanentAccess(userId: String, adminId: String, adminEmail: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         return try {
-            firestore.collection("users").document(userId)
+            db.collection("users").document(userId)
                 .update(
                     mapOf(
                         "status" to UserProfile.STATUS_APPROVED,
@@ -212,9 +232,10 @@ class AdminRepository(
     }
 
     suspend fun restoreUser(userId: String, adminId: String, adminEmail: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         val newExpiry = System.currentTimeMillis() + UserProfile.EIGHT_HOURS_MILLIS
         return try {
-            firestore.collection("users").document(userId)
+            db.collection("users").document(userId)
                 .update(
                     mapOf(
                         "status" to UserProfile.STATUS_APPROVED,
@@ -242,8 +263,9 @@ class AdminRepository(
     }
 
     suspend fun deleteUser(userId: String, adminId: String, adminEmail: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         return try {
-            firestore.collection("users").document(userId).delete().await()
+            db.collection("users").document(userId).delete().await()
             recordAuditLog(
                 AuditLog(
                     timestamp = System.currentTimeMillis(),
@@ -268,8 +290,9 @@ class AdminRepository(
         adminId: String,
         adminEmail: String
     ): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         return try {
-            firestore.collection("users").document(userId)
+            db.collection("users").document(userId)
                 .update("status", newStatus)
                 .await()
 
@@ -291,9 +314,10 @@ class AdminRepository(
     }
 
     suspend fun updateUserComment(userId: String, comment: String, adminId: String, adminEmail: String): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         val now = System.currentTimeMillis()
         return try {
-            firestore.collection("users").document(userId)
+            db.collection("users").document(userId)
                 .update(
                     mapOf(
                         "adminComment" to comment.trim(),
@@ -325,6 +349,7 @@ class AdminRepository(
         adminEmail: String,
         customMessage: String? = null
     ): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         val (enabled, maintenance) = when (mode.uppercase()) {
             "MAINTENANCE" -> true to true
             "DISABLED" -> false to false
@@ -347,7 +372,7 @@ class AdminRepository(
                 "updatedAt" to System.currentTimeMillis()
             )
 
-            firestore.collection("settings").document("service_control")
+            db.collection("settings").document("service_control")
                 .set(data)
                 .await()
 
@@ -374,9 +399,10 @@ class AdminRepository(
         adminId: String,
         adminEmail: String
     ): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         val now = System.currentTimeMillis()
         return try {
-            firestore.collection("settings").document("service_control")
+            db.collection("settings").document("service_control")
                 .update(
                     mapOf(
                         "broadcastTitle" to title.trim(),
@@ -407,9 +433,10 @@ class AdminRepository(
         adminId: String,
         adminEmail: String
     ): Result<Unit> {
+        val db = firestore ?: return Result.failure(IllegalStateException("Firebase not configured"))
         val now = System.currentTimeMillis()
         return try {
-            firestore.collection("settings").document("service_control")
+            db.collection("settings").document("service_control")
                 .update(
                     mapOf(
                         "broadcastTitle" to null,
@@ -438,6 +465,7 @@ class AdminRepository(
 
     private suspend fun recordAuditLog(log: AuditLog) {
         try {
+            val db = firestore ?: return
             val logMap = mapOf(
                 "timestamp" to log.timestamp,
                 "adminId" to log.adminId,
@@ -446,7 +474,7 @@ class AdminRepository(
                 "targetUserId" to log.targetUserId,
                 "result" to log.result
             )
-            firestore.collection("audit_logs").add(logMap).await()
+            db.collection("audit_logs").add(logMap).await()
         } catch (e: Exception) {
             Log.e(TAG, "Failed to record admin audit log", e)
         }

@@ -24,12 +24,13 @@ private const val TAG = "CompanionManager"
 
 class CompanionManager(private val context: Context) {
 
-    private val firestore by lazy {
+    private val firestore: FirebaseFirestore? by lazy {
         try {
             val dbId = context.applicationContext.getString(R.string.firestore_database_id)
             FirebaseFirestore.getInstance(dbId)
         } catch (e: Exception) {
-            FirebaseFirestore.getInstance()
+            Log.w(TAG, "FirebaseFirestore not initialized yet in CompanionManager: ${e.message}")
+            null
         }
     }
 
@@ -80,7 +81,13 @@ class CompanionManager(private val context: Context) {
      * Real-time Flow of Companion metadata from Firestore.
      */
     fun getCompanionInfoFlow(): Flow<CompanionInfo> = callbackFlow {
-        val docRef = firestore.collection("settings").document("windows_companion")
+        val db = firestore
+        if (db == null) {
+            trySend(getDefaultCompanionInfo())
+            awaitClose {}
+            return@callbackFlow
+        }
+        val docRef = db.collection("settings").document("windows_companion")
         val listener = docRef.addSnapshotListener { snapshot, error ->
             if (error != null) {
                 Log.w(TAG, "Firestore error reading companion config: ${error.message}")
@@ -221,8 +228,8 @@ class CompanionManager(private val context: Context) {
 
             // Save to Firestore
             try {
-                firestore.collection("settings").document("windows_companion")
-                    .set(
+                firestore?.collection("settings")?.document("windows_companion")
+                    ?.set(
                         mapOf(
                             "version" to updatedInfo.version,
                             "protocolVersion" to updatedInfo.protocolVersion,
@@ -235,7 +242,7 @@ class CompanionManager(private val context: Context) {
                             "lastUpdated" to updatedInfo.lastUpdated,
                             "releaseNotes" to updatedInfo.releaseNotes
                         )
-                    ).await()
+                    )?.await()
             } catch (e: Exception) {
                 Log.w(TAG, "Firestore write warning: ${e.message}")
             }

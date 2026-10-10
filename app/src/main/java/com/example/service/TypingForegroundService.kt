@@ -35,7 +35,7 @@ class TypingForegroundService : Service {
         val progressText = intent?.getStringExtra(EXTRA_PROGRESS_TEXT) ?: "Typing code via Bluetooth HID..."
         val notification = buildNotification(progressText)
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 startForeground(
                     NOTIFICATION_ID,
@@ -45,8 +45,9 @@ class TypingForegroundService : Service {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
-        } else {
-            startForeground(NOTIFICATION_ID, notification)
+        } catch (e: Exception) {
+            stopSelf()
+            return START_NOT_STICKY
         }
 
         return START_STICKY
@@ -116,11 +117,9 @@ class TypingForegroundService : Service {
         }
 
         fun stop(context: Context) {
-            val intent = Intent(context, TypingForegroundService::class.java).apply {
-                action = ACTION_STOP_SERVICE
-            }
+            val intent = Intent(context, TypingForegroundService::class.java)
             try {
-                context.startService(intent)
+                context.stopService(intent)
             } catch (_: Exception) {}
         }
     }

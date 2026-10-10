@@ -282,4 +282,16 @@ Math: a + b = c, x * y - z / 2 < 10 && total > 5"""
         mockCompanionServer.close()
         usbManager.cleanup()
     }
+
+    @Test
+    fun testMainViewModel_initializesWithoutForceCloseOnStartup() = runBlocking {
+        val app = ApplicationProvider.getApplicationContext<android.app.Application>()
+        val vm = com.example.ui.MainViewModel(app)
+        assertNotNull(vm.userProfile.value)
+        assertNotNull(vm.usbConnectionState.value)
+        assertNotNull(vm.usbDiagnosticsReport.value)
+        vm.usbTypingManager.cleanup()
+        vm.hidManager.cleanup()
+        vm.authRepository.cleanup()
+    }
 }

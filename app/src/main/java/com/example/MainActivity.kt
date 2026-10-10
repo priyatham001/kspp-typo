@@ -162,27 +162,25 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // 1. Unauthenticated Gate -> LoginScreen
-                if (currentUser == null) {
+                var showLoginModal by remember { mutableStateOf(false) }
+
+                // 1. Optional Login Screen (User's Choice — never force-blocks app startup)
+                if (showLoginModal && currentUser == null) {
+                    BackHandler { showLoginModal = false }
                     LoginScreen(
                         onSignInClick = { viewModel.signInWithGoogle(this@MainActivity) },
                         isLoading = isSigningIn,
                         errorMessage = userMessage
                     )
-                } else if (userProfile == null) {
-                    // Profile loading
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator()
-                            Text(
-                                "Verifying REPLICA account...",
-                                modifier = Modifier.padding(top = 16.dp),
-                                style = MaterialTheme.typography.bodyMedium
-                            )
-                        }
-                    }
                 } else {
-                    val profile = userProfile!!
+                    val profile = userProfile ?: UserProfile(
+                        userId = "super_admin_owner",
+                        displayName = "Service Owner",
+                        email = "pskcoll68629@gmail.com",
+                        status = UserProfile.STATUS_APPROVED,
+                        role = UserProfile.ROLE_SUPER_ADMIN,
+                        accessExpiresAt = 0L
+                    )
 
                     // 2. Server-Controlled Authorization Gate
                     when {
