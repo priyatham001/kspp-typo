@@ -122,12 +122,11 @@ class UsbTypingManager(private val context: Context) {
         }
     }
 
-    suspend fun checkConnection(targetHost: String = "127.0.0.1", targetPort: Int = USB_PORT): UsbConnectionState =
+    suspend fun checkConnection(customHost: String? = null, targetPort: Int = USB_PORT): UsbConnectionState =
         withContext(Dispatchers.IO) {
-            _connectionState.value = UsbConnectionState.Connecting("Probing companion on $targetHost:$targetPort...")
             val startTime = System.currentTimeMillis()
 
-            // If active socket is already synced, ping it
+            // 1. If active socket is already established & connected, verify with PING
             activeSocket?.let { sock ->
                 if (!sock.isClosed && sock.isConnected) {
                     try {
@@ -135,36 +134,68 @@ class UsbTypingManager(private val context: Context) {
                             put("type", "PING")
                             put("timestamp", startTime)
                         }.toString()
-                        sendRawLine(pingMsg)
-                        val elapsed = System.currentTimeMillis() - startTime
-                        _lastLatencyMs.value = elapsed
-                        val currentState = _connectionState.value
-                        if (currentState is UsbConnectionState.Synced) {
-                            val updated = currentState.copy(latencyMs = elapsed)
-                            _connectionState.value = updated
-                            return@withContext updated
+                        val ok = sendRawLine(pingMsg)
+                        if (ok) {
+                            val elapsed = System.currentTimeMillis() - startTime
+                            _lastLatencyMs.value = elapsed
+                            val currentState = _connectionState.value
+                            if (currentState is UsbConnectionState.Synced) {
+                                val updated = currentState.copy(latencyMs = elapsed)
+                                _connectionState.value = updated
+                                return@withContext updated
+                            }
                         }
                     } catch (e: Exception) {
-                        Log.d(TAG, "Active socket ping failed: ${e.message}")
+                        Log.d(TAG, "Active socket probe failed: ${e.message}")
                         closeActiveSocket()
                     }
                 }
             }
 
-            // Attempt outgoing connection to PC companion (e.g. adb reverse tcp:8989 tcp:8989)
-            try {
-                val socket = Socket()
-                socket.connect(InetSocketAddress(targetHost, targetPort), 2500)
-                socket.soTimeout = 4000
-                return@withContext handleEstablishedSocket(socket)
-            } catch (e: Exception) {
-                Log.d(TAG, "Connection probe to $targetHost:$targetPort failed: ${e.message}")
-                val state = UsbConnectionState.Disconnected(
-                    "Companion not reached. Ensure replica-companion.exe is running on PC."
-                )
-                _connectionState.value = state
-                return@withContext state
+            // 2. Candidate hosts to probe:
+            // - If customHost provided, prioritize it
+            // - 127.0.0.1 (ADB reverse tcp:8989 tcp:8989 standard)
+            // - 10.0.2.2 (Android Emulator loopback to host PC)
+            val candidateHosts = mutableListOf<String>()
+            if (!customHost.isNullOrBlank()) {
+                candidateHosts.add(customHost.trim())
             }
+            if (!candidateHosts.contains("127.0.0.1")) candidateHosts.add("127.0.0.1")
+            if (!candidateHosts.contains("10.0.2.2")) candidateHosts.add("10.0.2.2")
+
+            var lastFailureReason = "Windows companion not detected."
+
+            for (host in candidateHosts) {
+                _connectionState.value = UsbConnectionState.Connecting("Probing companion on $host:$targetPort...")
+                try {
+                    val socket = Socket()
+                    // 1500ms connection timeout per candidate for responsive checks
+                    socket.connect(InetSocketAddress(host, targetPort), 1500)
+                    socket.soTimeout = 4000
+                    Log.d(TAG, "Connected to companion at $host:$targetPort! Running handshake...")
+                    val result = handleEstablishedSocket(socket)
+                    if (result is UsbConnectionState.Synced) {
+                        return@withContext result
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Probe to $host:$targetPort failed: ${e.message}")
+                    lastFailureReason = when {
+                        e is java.net.ConnectException -> "Connection refused on $host:$targetPort. Ensure replica-companion.exe is running on PC."
+                        e is java.net.SocketTimeoutException -> "Connection timed out on $host:$targetPort."
+                        else -> "Could not reach companion on $host:$targetPort (${e.message})."
+                    }
+                }
+            }
+
+            // If incoming socket was accepted via ServerSocket in background
+            val currentState = _connectionState.value
+            if (currentState is UsbConnectionState.Synced) {
+                return@withContext currentState
+            }
+
+            val finalDisconnectedState = UsbConnectionState.Disconnected(lastFailureReason)
+            _connectionState.value = finalDisconnectedState
+            return@withContext finalDisconnectedState
         }
 
     private suspend fun handleEstablishedSocket(socket: Socket): UsbConnectionState =

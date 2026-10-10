@@ -95,6 +95,9 @@ fun UsbTypingScreen(
 
     var isCheckingConnection by remember { mutableStateOf(false) }
     var showHowToUse by remember { mutableStateOf(true) }
+    var showAdvancedSettings by remember { mutableStateOf(false) }
+    var customHostInput by remember { mutableStateOf("127.0.0.1") }
+    var customPortInput by remember { mutableStateOf("8989") }
     var usbDelayMs by remember { mutableFloatStateOf(25f) }
 
     val scrollState = rememberScrollState()
@@ -259,7 +262,8 @@ fun UsbTypingScreen(
                         onClick = {
                             scope.launch {
                                 isCheckingConnection = true
-                                viewModel.checkUsbConnection()
+                                val port = customPortInput.toIntOrNull() ?: 8989
+                                viewModel.checkUsbConnection(customHostInput, port)
                                 isCheckingConnection = false
                             }
                         },
@@ -292,6 +296,105 @@ fun UsbTypingScreen(
                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Share .exe")
+                    }
+                }
+
+                // Advanced Connection Settings & ADB Command Toggle
+                Spacer(modifier = Modifier.height(10.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { showAdvancedSettings = !showAdvancedSettings },
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = if (showAdvancedSettings) "⚙️ Hide Advanced Connection Settings" else "⚙️ Advanced Port / Host Settings",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+
+                AnimatedVisibility(visible = showAdvancedSettings) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 10.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = customHostInput,
+                                onValueChange = { customHostInput = it },
+                                label = { Text("Host / IP", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(2f)
+                            )
+                            OutlinedTextField(
+                                value = customPortInput,
+                                onValueChange = { customPortInput = it },
+                                label = { Text("Port", fontSize = 11.sp) },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
+                        // ADB Command Quick Copy Box
+                        Card(
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = "ADB Port Forwarding Command (Optional):",
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "adb reverse tcp:8989 tcp:8989",
+                                    fontFamily = FontFamily.Monospace,
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    OutlinedButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("ADB Command", "adb reverse tcp:8989 tcp:8989")
+                                            clipboard.setPrimaryClip(clip)
+                                        },
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(12.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Copy Reverse Cmd", fontSize = 10.sp)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = {
+                                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                            val clip = android.content.ClipData.newPlainText("ADB Forward Command", "adb forward tcp:8989 tcp:8989")
+                                            clipboard.setPrimaryClip(clip)
+                                        },
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Icon(Icons.Default.ContentPaste, contentDescription = null, modifier = Modifier.size(12.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Copy Forward Cmd", fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

@@ -214,6 +214,16 @@ int main(int argc, char* argv[]) {
     printf("========================================================\n");
     printf("[INFO] Protocol version: %d\n", PROTOCOL_VERSION);
     printf("[INFO] Listening on TCP port %d\n", DEFAULT_PORT);
+
+    // Attempt automatic adb port forwarding for convenience if adb is available
+    printf("[ADB] Attempting automatic USB reverse port forwarding...\n");
+    int adbRes = system("adb reverse tcp:8989 tcp:8989 >nul 2>nul");
+    if (adbRes == 0) {
+        printf("[ADB] -> Successfully configured 'adb reverse tcp:8989 tcp:8989'!\n");
+    } else {
+        printf("[ADB] -> Note: Run 'adb reverse tcp:8989 tcp:8989' or 'adb forward tcp:8989 tcp:8989' if phone is connected via USB cable.\n");
+    }
+
     printf("[INFO] Connect your Android phone via USB cable and tap 'Check Connection'.\n");
     printf("--------------------------------------------------------\n");
 
