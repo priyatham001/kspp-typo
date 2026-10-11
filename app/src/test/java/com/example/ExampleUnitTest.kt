@@ -130,18 +130,18 @@ class ExampleUnitTest {
 
     @Test
     fun testUnsupportedCharacterDetection() {
-        // Non-ASCII currency, symbols, and accented characters not in US QWERTY must return null
-        val copyright = KeyboardMapper.mapChar('©')
-        assertNull(copyright)
+        // Non-ASCII symbols, emojis, math signs, and non-Latin alphabets not in US QWERTY must return null
+        val infinity = KeyboardMapper.mapChar('∞')
+        assertNull(infinity)
 
-        val rupee = KeyboardMapper.mapChar('₹')
-        assertNull(rupee)
+        val greekPi = KeyboardMapper.mapChar('π')
+        assertNull(greekPi)
 
-        val euro = KeyboardMapper.mapChar('€')
-        assertNull(euro)
+        val musicNote = KeyboardMapper.mapChar('♫')
+        assertNull(musicNote)
 
-        val accented = KeyboardMapper.mapChar('é')
-        assertNull(accented)
+        val unmappedSymbol = KeyboardMapper.mapChar('☯')
+        assertNull(unmappedSymbol)
     }
 
     @Test
@@ -233,7 +233,7 @@ class ExampleUnitTest {
     @Test
     fun testCompanionInfo_modelDefaults() {
         val info = com.example.usb.CompanionInfo()
-        assertEquals("1.0.1", info.version)
+        assertEquals("1.1.0", info.version)
         assertEquals(1, info.protocolVersion)
         assertEquals("replica-companion.exe", info.fileName)
         assertTrue(info.fileSize > 0)
@@ -253,5 +253,17 @@ class ExampleUnitTest {
         assertEquals(100, typing.totalChars)
         assertEquals(0.5f, typing.percent, 0.001f)
         assertEquals(1500L, typing.elapsedMs)
+    }
+
+    @Test
+    fun testShowMeTargets_allConfiguredWithValidTabs() {
+        val targets = com.example.ui.ShowMeTarget.values()
+        assertTrue(targets.isNotEmpty())
+        for (target in targets) {
+            assertTrue(target.title.isNotBlank())
+            assertTrue(target.description.isNotBlank())
+            assertTrue(target.tag.isNotBlank())
+            assertNotNull(target.targetTab)
+        }
     }
 }

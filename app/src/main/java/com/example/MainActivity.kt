@@ -12,14 +12,21 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Description
@@ -77,6 +84,10 @@ import com.example.ui.MainViewModel
 import com.example.ui.ScriptsScreen
 import com.example.ui.SettingsScreen
 import com.example.ui.StatusAccessScreen
+import com.example.ui.OnboardingGuideDialog
+import com.example.ui.InteractiveShowMeOverlay
+import com.example.ui.ShowMeTarget
+import com.example.ui.TroubleshootingBottomSheet
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.MyApplicationTheme
 
@@ -153,6 +164,18 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
+            val isTutorialCompleted by viewModel.isTutorialCompleted.collectAsState()
+            var showTutorial by remember { mutableStateOf(false) }
+            var showTroubleshooting by remember { mutableStateOf(false) }
+            var activeShowMeTarget by remember { mutableStateOf<ShowMeTarget?>(null) }
+
+            // Launch onboarding tutorial on first start once user is authorized
+            LaunchedEffect(isTutorialCompleted) {
+                if (!isTutorialCompleted) {
+                    showTutorial = true
+                }
+            }
+
             MyApplicationTheme(darkTheme = isDark) {
                 var currentTab by remember { mutableStateOf(ScreenTab.EDITOR) }
 
@@ -162,25 +185,61 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                var showLoginModal by remember { mutableStateOf(false) }
-
-                // 1. Optional Login Screen (User's Choice — never force-blocks app startup)
-                if (showLoginModal && currentUser == null) {
-                    BackHandler { showLoginModal = false }
+                // 1. Authentication & Server-Controlled Authorization Gate
+                if (currentUser == null && userProfile == null) {
                     LoginScreen(
                         onSignInClick = { viewModel.signInWithGoogle(this@MainActivity) },
                         isLoading = isSigningIn,
                         errorMessage = userMessage
                     )
+                } else if (userProfile == null) {
+                    // Profile synchronization screen
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(MaterialTheme.colorScheme.background)
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Card(
+                            shape = RoundedCornerShape(24.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = CardDefaults.outlinedCardBorder(),
+                            modifier = Modifier.fillMaxWidth().padding(16.dp)
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(32.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                verticalArrangement = Arrangement.spacedBy(16.dp)
+                            ) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(48.dp),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = "Verifying REPLICA authorization...",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = "Synchronizing account credentials with server",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                OutlinedButton(
+                                    onClick = { viewModel.signOut(this@MainActivity) },
+                                    modifier = Modifier.padding(top = 8.dp)
+                                ) {
+                                    Text("Cancel / Sign Out")
+                                }
+                            }
+                        }
+                    }
                 } else {
-                    val profile = userProfile ?: UserProfile(
-                        userId = "super_admin_owner",
-                        displayName = "Service Owner",
-                        email = "pskcoll68629@gmail.com",
-                        status = UserProfile.STATUS_APPROVED,
-                        role = UserProfile.ROLE_SUPER_ADMIN,
-                        accessExpiresAt = 0L
-                    )
+                    val profile = userProfile!!
 
                     // 2. Server-Controlled Authorization Gate
                     when {
@@ -289,6 +348,32 @@ class MainActivity : ComponentActivity() {
                                             }
                                         },
                                         actions = {
+                                            // Quick Tutorial / Guide action button
+                                            IconButton(
+                                                onClick = { showTutorial = true },
+                                                modifier = Modifier.testTag("topbar_tutorial_button")
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Info,
+                                                    contentDescription = "Quick Guide",
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+
+                                            // Troubleshooting action button
+                                            IconButton(
+                                                onClick = { showTroubleshooting = true },
+                                                modifier = Modifier.testTag("topbar_troubleshoot_button")
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Settings,
+                                                    contentDescription = "Troubleshooting",
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                                    modifier = Modifier.size(22.dp)
+                                                )
+                                            }
+
                                             // Admin Panel Button (visible to Admin/SuperAdmin)
                                             if (profile.isAdmin) {
                                                 IconButton(
@@ -419,24 +504,30 @@ class MainActivity : ComponentActivity() {
                                             onNavigateToScripts = { currentTab = ScreenTab.SCRIPTS },
                                             onNavigateToBluetooth = { currentTab = ScreenTab.HID_INFO },
                                             onRequestPermissions = requestBluetoothPermissions,
-                                            onNavigateToUsb = { currentTab = ScreenTab.USB_TYPING }
+                                            onNavigateToUsb = { currentTab = ScreenTab.USB_TYPING },
+                                            onOpenTutorial = { showTutorial = true },
+                                            onOpenTroubleshooting = { showTroubleshooting = true }
                                         )
                                         ScreenTab.SCRIPTS -> ScriptsScreen(
                                             viewModel = viewModel,
                                             onScriptLoaded = { currentTab = ScreenTab.EDITOR }
                                         )
                                         ScreenTab.USB_TYPING -> UsbTypingScreen(
-                                            viewModel = viewModel
+                                            viewModel = viewModel,
+                                            onOpenTroubleshooting = { showTroubleshooting = true }
                                         )
                                         ScreenTab.TEST -> KeyboardTestScreen(
                                             viewModel = viewModel
                                         )
                                         ScreenTab.HID_INFO -> HidInfoScreen(
-                                            viewModel = viewModel
+                                            viewModel = viewModel,
+                                            onOpenTroubleshooting = { showTroubleshooting = true }
                                         )
                                         ScreenTab.SETTINGS -> SettingsScreen(
                                             viewModel = viewModel,
-                                            onOpenAdmin = { currentTab = ScreenTab.ADMIN }
+                                            onOpenAdmin = { currentTab = ScreenTab.ADMIN },
+                                            onShowTutorialAgain = { showTutorial = true },
+                                            onOpenTroubleshooting = { showTroubleshooting = true }
                                         )
                                         ScreenTab.ADMIN -> {
                                             AdminDashboardScreen(
@@ -444,6 +535,55 @@ class MainActivity : ComponentActivity() {
                                                 onBack = { currentTab = ScreenTab.EDITOR }
                                             )
                                         }
+                                    }
+
+                                    // Interactive Show Me spotlight overlay
+                                    activeShowMeTarget?.let { target ->
+                                        val targets = ShowMeTarget.values()
+                                        val currentIndex = targets.indexOf(target)
+                                        InteractiveShowMeOverlay(
+                                            target = target,
+                                            onNext = {
+                                                val nextTarget = targets[(currentIndex + 1) % targets.size]
+                                                currentTab = nextTarget.targetTab
+                                                activeShowMeTarget = nextTarget
+                                            },
+                                            onBack = {
+                                                val prevTarget = targets[(currentIndex - 1 + targets.size) % targets.size]
+                                                currentTab = prevTarget.targetTab
+                                                activeShowMeTarget = prevTarget
+                                            },
+                                            onDone = {
+                                                activeShowMeTarget = null
+                                            }
+                                        )
+                                    }
+
+                                    // Onboarding Guide Dialog
+                                    if (showTutorial) {
+                                        OnboardingGuideDialog(
+                                            viewModel = viewModel,
+                                            onDismiss = { showTutorial = false },
+                                            onNavigateToTab = { tab -> currentTab = tab },
+                                            onStartShowMe = { target ->
+                                                currentTab = target.targetTab
+                                                activeShowMeTarget = target
+                                            },
+                                            onOpenTroubleshooting = {
+                                                showTutorial = false
+                                                showTroubleshooting = true
+                                            },
+                                            onRequestPermissions = requestBluetoothPermissions
+                                        )
+                                    }
+
+                                    // Troubleshooting Bottom Sheet
+                                    if (showTroubleshooting) {
+                                        TroubleshootingBottomSheet(
+                                            viewModel = viewModel,
+                                            onDismiss = { showTroubleshooting = false },
+                                            onRequestPermissions = requestBluetoothPermissions
+                                        )
                                     }
                                 }
                             }

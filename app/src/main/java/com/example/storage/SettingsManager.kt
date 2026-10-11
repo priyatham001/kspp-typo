@@ -30,6 +30,9 @@ class SettingsManager(context: Context) {
     )
     val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
 
+    private val _isTutorialCompleted = MutableStateFlow(prefs.getBoolean(KEY_TUTORIAL_COMPLETED, false))
+    val isTutorialCompleted: StateFlow<Boolean> = _isTutorialCompleted.asStateFlow()
+
     fun setKeepScreenAwake(enabled: Boolean) {
         _keepScreenAwake.value = enabled
         prefs.edit().putBoolean(KEY_KEEP_AWAKE, enabled).apply()
@@ -45,9 +48,15 @@ class SettingsManager(context: Context) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
     }
 
+    fun setTutorialCompleted(completed: Boolean) {
+        _isTutorialCompleted.value = completed
+        prefs.edit().putBoolean(KEY_TUTORIAL_COMPLETED, completed).apply()
+    }
+
     companion object {
         private const val KEY_KEEP_AWAKE = "keep_screen_awake"
         private const val KEY_DEFAULT_DELAY = "default_delay_ms"
         private const val KEY_THEME_MODE = "theme_mode"
+        private const val KEY_TUTORIAL_COMPLETED = "tutorial_completed"
     }
 }

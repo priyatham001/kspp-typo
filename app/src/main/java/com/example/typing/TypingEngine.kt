@@ -18,6 +18,7 @@ import kotlin.math.min
 
 sealed class TypingState {
     data object Idle : TypingState()
+    data class Preparing(val secondsRemaining: Int, val totalChars: Int) : TypingState()
     data class Typing(
         val currentIndex: Int,
         val totalChars: Int,
@@ -58,9 +59,9 @@ class TypingEngine(
     }
 
     /**
-     * Start typing text from index 0.
+     * Start typing text from index 0 with optional 3-second focus countdown.
      */
-    fun startTyping(text: String, customDelayMs: Long? = null) {
+    fun startTyping(text: String, customDelayMs: Long? = null, withCountdown: Boolean = true) {
         if (text.isEmpty()) {
             _typingState.value = TypingState.Error("There is no text to type. Please enter or load text first.")
             return
@@ -78,17 +79,27 @@ class TypingEngine(
         fullText = text
         currentIndex = 0
         isPaused = false
-        startTimeMs = System.currentTimeMillis()
+        startTimeMs = 0L
 
-        launchTypingLoop()
+        launchTypingLoop(withCountdown = withCountdown)
+    }
+
+    /**
+     * Skip countdown and begin keystroke streaming immediately.
+     */
+    fun skipCountdown() {
+        if (_typingState.value is TypingState.Preparing) {
+            typingJob?.cancel()
+            launchTypingLoop(withCountdown = false)
+        }
     }
 
     /**
      * Restart typing the current text from index 0.
      */
-    fun restartTyping(customDelayMs: Long? = null) {
+    fun restartTyping(customDelayMs: Long? = null, withCountdown: Boolean = true) {
         if (fullText.isNotEmpty()) {
-            startTyping(fullText, customDelayMs)
+            startTyping(fullText, customDelayMs, withCountdown = withCountdown)
         }
     }
 
@@ -96,7 +107,7 @@ class TypingEngine(
      * Temporarily pause typing. Keeps current position intact and releases active keys.
      */
     fun pauseTyping() {
-        if (_typingState.value is TypingState.Typing) {
+        if (_typingState.value is TypingState.Typing || _typingState.value is TypingState.Preparing) {
             isPaused = true
             typingJob?.cancel()
             typingJob = null
@@ -109,7 +120,7 @@ class TypingEngine(
     }
 
     /**
-     * Resume typing from the exact paused index.
+     * Resume typing from the exact paused index without countdown.
      */
     fun resumeTyping() {
         if (_typingState.value is TypingState.Paused) {
@@ -119,7 +130,7 @@ class TypingEngine(
                 return
             }
             isPaused = false
-            launchTypingLoop()
+            launchTypingLoop(withCountdown = false)
         }
     }
 
@@ -211,10 +222,23 @@ class TypingEngine(
         }
     }
 
-    private fun launchTypingLoop() {
+    private fun launchTypingLoop(withCountdown: Boolean = false) {
         val total = fullText.length
         typingJob = scope.launch {
             try {
+                // 1. Initial Focus Preparation Countdown (3 seconds)
+                if (withCountdown && currentIndex == 0) {
+                    for (seconds in 3 downTo 1) {
+                        if (!isActive || isPaused) return@launch
+                        _typingState.value = TypingState.Preparing(seconds, total)
+                        delay(1000)
+                    }
+                }
+
+                if (startTimeMs == 0L) {
+                    startTimeMs = System.currentTimeMillis()
+                }
+
                 var lastProgressUpdateTime = 0L
                 var previousKeyCode: Byte = -1
 
@@ -310,6 +334,8 @@ class TypingEngine(
 
                 if (currentIndex >= total && !isPaused) {
                     releaseAllKeys()
+                    // Allow host OS keyboard buffer a clean settling pause before signalling completion
+                    delay(50)
                     val duration = (System.currentTimeMillis() - startTimeMs).coerceAtLeast(0L)
                     _typingState.value = TypingState.Completed(total, duration)
                     startTimeMs = 0L

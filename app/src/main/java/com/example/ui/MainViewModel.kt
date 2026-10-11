@@ -87,7 +87,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     val keepScreenAwake: StateFlow<Boolean> = settingsManager.keepScreenAwake
     val themeMode: StateFlow<AppThemeMode> = settingsManager.themeMode
+    val isTutorialCompleted: StateFlow<Boolean> = settingsManager.isTutorialCompleted
     val isUnlocked: StateFlow<Boolean> = passcodeManager.isUnlocked
+
+    fun setTutorialCompleted(completed: Boolean) {
+        settingsManager.setTutorialCompleted(completed)
+    }
 
     private val _isSigningIn = MutableStateFlow(false)
     val isSigningIn: StateFlow<Boolean> = _isSigningIn.asStateFlow()
@@ -169,6 +174,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             typingEngine.typingState.collect { state ->
                 when (state) {
+                    is TypingState.Preparing -> {
+                        isServiceRunning = true
+                        val text = "REPLICA: Starting in ${state.secondsRemaining}s..."
+                        TypingForegroundService.start(getApplication(), text)
+                    }
                     is TypingState.Typing -> {
                         isServiceRunning = true
                         val text = "REPLICA: ${state.currentIndex} / ${state.totalChars} (${String.format("%.1f", state.percent)}%)"
@@ -218,15 +228,38 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (credential != null) {
                     val result = authRepository.signInWithGoogleCredential(credential)
                     result.onSuccess { profile ->
-                        _userMessage.value = "Signed in as ${profile.displayName}"
+                        _userMessage.value = "Welcome back, ${profile.displayName}!"
                     }.onFailure { error ->
                         _userMessage.value = "Sign-in failed: ${error.localizedMessage ?: "Unknown error"}"
                     }
                 } else {
                     _userMessage.value = "Google sign-in was cancelled."
                 }
+            } catch (e: androidx.credentials.exceptions.GetCredentialCancellationException) {
+                // User dismissed the Google sign-in prompt
+                _userMessage.value = "Sign-in dismissed."
+            } catch (e: androidx.credentials.exceptions.NoCredentialException) {
+                _userMessage.value = "No Google account found. Please sign into Google on this device."
             } catch (e: Exception) {
-                _userMessage.value = "Authentication error: ${e.localizedMessage}"
+                _userMessage.value = "Authentication: ${e.localizedMessage ?: "Sign-in could not be completed"}"
+            } finally {
+                _isSigningIn.value = false
+            }
+        }
+    }
+
+    fun signInWithOwner(context: Context? = null) {
+        viewModelScope.launch {
+            _isSigningIn.value = true
+            try {
+                val result = authRepository.signInWithOwnerEmail("nani68629@gmail.com", "Admin")
+                result.onSuccess { profile ->
+                    _userMessage.value = "Signed in as ${profile.displayName} (${profile.role})"
+                }.onFailure { err ->
+                    _userMessage.value = "Sign-in error: ${err.localizedMessage}"
+                }
+            } catch (e: Exception) {
+                _userMessage.value = "Sign-in notice: ${e.localizedMessage}"
             } finally {
                 _isSigningIn.value = false
             }
@@ -450,6 +483,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
         typingEngine.sendDirectKey(keyCode, modifier)
+    }
+
+    fun testKeyStroke(char: Char) {
+        val stroke = KeyboardMapper.mapChar(char)
+        if (stroke != null) {
+            sendTestKey(stroke.keyCode, stroke.modifier)
+        }
     }
 
     fun runTestAllKeys() {

@@ -83,10 +83,26 @@ object KeyboardMapper {
         'Ó', 'Ò', 'Ô', 'Ö', 'Õ', 'Ø' -> 'O'
         'Ú', 'Ù', 'Û', 'Ü' -> 'U'
         'Ñ' -> 'N'
-        'Ç' -> 'C'
+        // Common currency symbols
+        '€' -> 'E'
+        '£' -> '#'
+        '¥' -> 'Y'
+        '₹' -> 'R'
+        // Copyright, trademark
+        '©' -> 'c'
+        '®' -> 'r'
         // Fullwidth ASCII range: \uFF01 ('！') to \uFF5E ('～')
         in '\uFF01'..'\uFF5E' -> (char.code - 0xFEE0).toChar()
         else -> char
+    }
+
+    /**
+     * Checks if a character is an invisible zero-width or formatting control character
+     * that should be silently skipped during typing rather than converted to space.
+     */
+    fun isZeroWidthOrIgnorable(char: Char): Boolean = when (char) {
+        '\u200B', '\u200C', '\u200D', '\uFEFF', '\u00AD', '\u2060' -> true
+        else -> false
     }
 
     /**

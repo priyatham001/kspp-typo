@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Notifications
@@ -95,6 +96,8 @@ fun HomeScreen(
     onNavigateToBluetooth: () -> Unit,
     onRequestPermissions: (() -> Unit)? = null,
     onNavigateToUsb: (() -> Unit)? = null,
+    onOpenTutorial: () -> Unit = {},
+    onOpenTroubleshooting: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
@@ -151,24 +154,52 @@ fun HomeScreen(
                         )
                     }
 
-                    // Connected or Disconnected Status Chip
-                    val isConnected = connectionState is HidConnectionState.Connected
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                if (isConnected) StatusGreen.copy(alpha = 0.15f)
-                                else MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = onOpenTutorial,
+                            modifier = Modifier.testTag("home_tutorial_guide_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Info,
+                                contentDescription = "Quick Guide",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
                             )
-                            .padding(horizontal = 10.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = if (isConnected) "● BT ONLINE" else "○ BT OFFLINE",
-                            color = if (isConnected) StatusGreen else MaterialTheme.colorScheme.error,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            fontFamily = FontFamily.Monospace
-                        )
+                        }
+
+                        IconButton(
+                            onClick = onOpenTroubleshooting,
+                            modifier = Modifier.testTag("home_troubleshoot_button")
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = "Troubleshooting",
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        // Connected or Disconnected Status Chip
+                        val isConnected = connectionState is HidConnectionState.Connected
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(
+                                    if (isConnected) StatusGreen.copy(alpha = 0.15f)
+                                    else MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+                                )
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = if (isConnected) "● BT ONLINE" else "○ BT OFFLINE",
+                                color = if (isConnected) StatusGreen else MaterialTheme.colorScheme.error,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                fontFamily = FontFamily.Monospace
+                            )
+                        }
                     }
                 }
 
@@ -957,7 +988,9 @@ fun ConnectionStatusBanner(
     onLockClick: () -> Unit
 ) {
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .testTag("connection_status_banner"),
         shape = RoundedCornerShape(14.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = CardDefaults.outlinedCardBorder()

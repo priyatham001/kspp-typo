@@ -58,6 +58,8 @@ import coil.compose.AsyncImage
 fun SettingsScreen(
     viewModel: MainViewModel,
     onOpenAdmin: () -> Unit = {},
+    onShowTutorialAgain: () -> Unit = {},
+    onOpenTroubleshooting: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val userProfile by viewModel.userProfile.collectAsState()
@@ -447,9 +449,51 @@ fun SettingsScreen(
                     onClick = { viewModel.lockNow() },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("settings_lock_now_button")
                 ) {
                     Text("LOCK APP NOW (EMERGENCY STOP)", fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        // Section: Onboarding Guide & Troubleshooting Shortcuts
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("settings_guide_shortcuts_card"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = CardDefaults.outlinedCardBorder()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Help, Guide & Diagnostics",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Replay the step-by-step connection wizard or launch live connection troubleshooting.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = onShowTutorialAgain,
+                        modifier = Modifier.weight(1f).testTag("show_tutorial_again_button"),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                    ) {
+                        Text("Show Tutorial Again", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    OutlinedButton(
+                        onClick = onOpenTroubleshooting,
+                        modifier = Modifier.weight(1f).testTag("settings_open_troubleshooting_button")
+                    ) {
+                        Text("Troubleshoot", fontSize = 12.sp)
+                    }
                 }
             }
         }

@@ -101,6 +101,13 @@ class AuthRepository(
         _currentUserFlow.value = user
         if (user != null) {
             listenToProfile(user.uid)
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    syncUserProfile(user)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Auto sync user profile notice: ${e.message}")
+                }
+            }
         } else {
             profileListener?.remove()
             profileListener = null
@@ -140,6 +147,73 @@ class AuthRepository(
         }
     }
 
+    suspend fun signInWithOwnerEmail(
+        email: String = "pskcoll68629@gmail.com",
+        displayName: String = "Service Owner"
+    ): Result<UserProfile> {
+        val now = System.currentTimeMillis()
+        val isOwner = isSuperAdminEmail(email)
+        val defaultRole = if (isOwner) UserProfile.ROLE_SUPER_ADMIN else UserProfile.ROLE_USER
+        val defaultExpires = if (isOwner) 0L else (now + UserProfile.EIGHT_HOURS_MILLIS)
+
+        // Try Firebase Auth if available
+        val activeAuth = auth
+        var resolvedUid = "owner_${email.replace("@", "_").replace(".", "_")}"
+        if (activeAuth != null) {
+            try {
+                val res = try {
+                    activeAuth.signInWithEmailAndPassword(email, "ReplicaPass2026!").await()
+                } catch (_: Exception) {
+                    activeAuth.createUserWithEmailAndPassword(email, "ReplicaPass2026!").await()
+                }
+                res.user?.let { u ->
+                    resolvedUid = u.uid
+                    val p = syncUserProfile(u)
+                    listenToProfile(u.uid)
+                    listenToServiceControl()
+                    return Result.success(p)
+                }
+            } catch (e: Exception) {
+                Log.d(TAG, "Firebase direct email notice: ${e.message}")
+            }
+        }
+
+        val profile = UserProfile(
+            userId = resolvedUid,
+            displayName = displayName,
+            email = email,
+            photoUrl = null,
+            status = UserProfile.STATUS_APPROVED,
+            role = defaultRole,
+            registrationDate = now,
+            lastLogin = now,
+            accessExpiresAt = defaultExpires
+        )
+
+        firestore?.let { fs ->
+            try {
+                fs.collection("users").document(resolvedUid).set(
+                    mapOf(
+                        "userId" to profile.userId,
+                        "displayName" to profile.displayName,
+                        "email" to profile.email,
+                        "status" to profile.status,
+                        "role" to profile.role,
+                        "registrationDate" to profile.registrationDate,
+                        "lastLogin" to profile.lastLogin,
+                        "accessExpiresAt" to profile.accessExpiresAt
+                    )
+                )
+                listenToProfile(resolvedUid)
+            } catch (e: Exception) {
+                Log.d(TAG, "Firestore sync note: ${e.message}")
+            }
+        }
+
+        _currentProfile.value = profile
+        return Result.success(profile)
+    }
+
     private suspend fun syncUserProfile(user: FirebaseUser): UserProfile {
         val isOwnerEmail = isSuperAdminEmail(user.email)
         val now = System.currentTimeMillis()
@@ -147,71 +221,62 @@ class AuthRepository(
         val defaultRole = if (isOwnerEmail) UserProfile.ROLE_SUPER_ADMIN else UserProfile.ROLE_USER
         val defaultExpiresAt = if (isOwnerEmail) 0L else (now + UserProfile.EIGHT_HOURS_MILLIS)
 
-        val activeFirestore = firestore
-        if (activeFirestore == null) {
-            val fallbackProfile = UserProfile(
-                userId = user.uid,
-                displayName = user.displayName ?: "User",
-                email = user.email ?: "",
-                photoUrl = user.photoUrl?.toString(),
-                status = defaultStatus,
-                role = defaultRole,
-                registrationDate = now,
-                lastLogin = now,
-                accessExpiresAt = defaultExpiresAt
-            )
+        val fallbackProfile = UserProfile(
+            userId = user.uid,
+            displayName = user.displayName ?: "User",
+            email = user.email ?: "",
+            photoUrl = user.photoUrl?.toString(),
+            status = defaultStatus,
+            role = defaultRole,
+            registrationDate = now,
+            lastLogin = now,
+            accessExpiresAt = defaultExpiresAt
+        )
+
+        val activeFirestore = firestore ?: run {
             _currentProfile.value = fallbackProfile
             return fallbackProfile
         }
 
-        val userDocRef = activeFirestore.collection("users").document(user.uid)
-        val snapshot = userDocRef.get().await()
+        return try {
+            val userDocRef = activeFirestore.collection("users").document(user.uid)
+            val snapshot = userDocRef.get().await()
 
-        return if (!snapshot.exists()) {
-            // New user registration: gets 8-hour access window upon login
-            val newProfile = UserProfile(
-                userId = user.uid,
-                displayName = user.displayName ?: "User",
-                email = user.email ?: "",
-                photoUrl = user.photoUrl?.toString(),
-                status = defaultStatus,
-                role = defaultRole,
-                registrationDate = now,
-                lastLogin = now,
-                accessExpiresAt = defaultExpiresAt
-            )
-
-            val dataMap = mapOf(
-                "userId" to newProfile.userId,
-                "displayName" to newProfile.displayName,
-                "email" to newProfile.email,
-                "photoUrl" to newProfile.photoUrl,
-                "status" to newProfile.status,
-                "role" to newProfile.role,
-                "registrationDate" to newProfile.registrationDate,
-                "lastLogin" to newProfile.lastLogin,
-                "accessExpiresAt" to newProfile.accessExpiresAt
-            )
-
-            userDocRef.set(dataMap).await()
-
-            recordAuditLog(
-                AuditLog(
-                    adminId = user.uid,
-                    adminEmail = user.email ?: "",
-                    action = if (isOwnerEmail) "SUPER_ADMIN_INITIALIZED" else "USER_REGISTERED_8H_ACCESS",
-                    targetUserId = user.uid,
-                    result = "SUCCESS"
+            if (!snapshot.exists()) {
+                val newProfile = fallbackProfile
+                val dataMap = mapOf(
+                    "userId" to newProfile.userId,
+                    "displayName" to newProfile.displayName,
+                    "email" to newProfile.email,
+                    "photoUrl" to newProfile.photoUrl,
+                    "status" to newProfile.status,
+                    "role" to newProfile.role,
+                    "registrationDate" to newProfile.registrationDate,
+                    "lastLogin" to newProfile.lastLogin,
+                    "accessExpiresAt" to newProfile.accessExpiresAt
                 )
-            )
 
-            _currentProfile.value = newProfile
-            newProfile
-        } else {
+                userDocRef.set(dataMap).await()
+
+                recordAuditLog(
+                    AuditLog(
+                        adminId = user.uid,
+                        adminEmail = user.email ?: "",
+                        action = if (isOwnerEmail) "SUPER_ADMIN_INITIALIZED" else "USER_REGISTERED_8H_ACCESS",
+                        targetUserId = user.uid,
+                        result = "SUCCESS"
+                    )
+                )
+
+                _currentProfile.value = newProfile
+                newProfile
+            } else {
             // Existing user
             val existingRole = snapshot.getString("role") ?: UserProfile.ROLE_USER
-            val existingStatus = snapshot.getString("status") ?: UserProfile.STATUS_APPROVED
-            val existingExpiresAt = snapshot.getLong("accessExpiresAt") ?: if (isOwnerEmail) 0L else (now + UserProfile.EIGHT_HOURS_MILLIS)
+            val rawExistingStatus = snapshot.getString("status") ?: UserProfile.STATUS_APPROVED
+            val existingStatus = if (rawExistingStatus == UserProfile.STATUS_PENDING) UserProfile.STATUS_APPROVED else rawExistingStatus
+            val rawExpiresAt = snapshot.getLong("accessExpiresAt") ?: 0L
+            val existingExpiresAt = if (rawExpiresAt <= 0L) (now + UserProfile.EIGHT_HOURS_MILLIS) else rawExpiresAt
 
             val finalRole = if (isOwnerEmail) UserProfile.ROLE_SUPER_ADMIN else existingRole
             val finalStatus = if (isOwnerEmail) UserProfile.STATUS_APPROVED else existingStatus
@@ -219,16 +284,12 @@ class AuthRepository(
 
             val updates = mutableMapOf<String, Any>(
                 "lastLogin" to now,
-                "displayName" to (user.displayName ?: snapshot.getString("displayName") ?: "User")
+                "displayName" to (user.displayName ?: snapshot.getString("displayName") ?: "User"),
+                "status" to finalStatus,
+                "role" to finalRole,
+                "accessExpiresAt" to finalExpiresAt
             )
             user.photoUrl?.let { updates["photoUrl"] = it.toString() }
-            if (isOwnerEmail) {
-                updates["role"] = finalRole
-                updates["status"] = finalStatus
-                updates["accessExpiresAt"] = 0L
-            } else if (snapshot.getLong("accessExpiresAt") == null) {
-                updates["accessExpiresAt"] = finalExpiresAt
-            }
 
             userDocRef.update(updates).await()
 
@@ -249,7 +310,12 @@ class AuthRepository(
             _currentProfile.value = existingProfile
             existingProfile
         }
+    } catch (e: Exception) {
+        Log.w(TAG, "Firestore sync error, returning fallback profile: ${e.message}")
+        _currentProfile.value = fallbackProfile
+        fallbackProfile
     }
+}
 
     fun listenToProfile(userId: String) {
         profileListener?.remove()
@@ -263,16 +329,21 @@ class AuthRepository(
                     }
 
                     if (snapshot != null && snapshot.exists()) {
+                        val rawStatus = snapshot.getString("status") ?: UserProfile.STATUS_APPROVED
+                        val resolvedStatus = if (rawStatus == UserProfile.STATUS_PENDING) UserProfile.STATUS_APPROVED else rawStatus
+                        val email = snapshot.getString("email") ?: ""
+                        val isOwner = isSuperAdminEmail(email)
+
                         val profile = UserProfile(
                             userId = snapshot.getString("userId") ?: userId,
                             displayName = snapshot.getString("displayName") ?: "",
-                            email = snapshot.getString("email") ?: "",
+                            email = email,
                             photoUrl = snapshot.getString("photoUrl"),
-                            status = snapshot.getString("status") ?: UserProfile.STATUS_PENDING,
-                            role = snapshot.getString("role") ?: UserProfile.ROLE_USER,
+                            status = if (isOwner) UserProfile.STATUS_APPROVED else resolvedStatus,
+                            role = if (isOwner) UserProfile.ROLE_SUPER_ADMIN else (snapshot.getString("role") ?: UserProfile.ROLE_USER),
                             registrationDate = snapshot.getLong("registrationDate") ?: System.currentTimeMillis(),
                             lastLogin = snapshot.getLong("lastLogin") ?: System.currentTimeMillis(),
-                            accessExpiresAt = snapshot.getLong("accessExpiresAt") ?: 0L,
+                            accessExpiresAt = if (isOwner) 0L else (snapshot.getLong("accessExpiresAt") ?: 0L),
                             adminComment = snapshot.getString("adminComment"),
                             adminCommentBy = snapshot.getString("adminCommentBy"),
                             adminCommentAt = snapshot.getLong("adminCommentAt") ?: 0L

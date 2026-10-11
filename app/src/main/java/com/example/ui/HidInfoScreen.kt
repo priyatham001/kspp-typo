@@ -62,6 +62,7 @@ import com.example.ui.theme.StatusYellow
 @Composable
 fun HidInfoScreen(
     viewModel: MainViewModel,
+    onOpenTroubleshooting: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -87,7 +88,7 @@ fun HidInfoScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "HID Device Info",
                     style = MaterialTheme.typography.headlineSmall,
@@ -100,15 +101,27 @@ fun HidInfoScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(
-                onClick = { viewModel.refreshBluetooth() },
-                modifier = Modifier.testTag("refresh_hid_info_button")
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "Refresh Status",
-                    tint = MaterialTheme.colorScheme.primary
-                )
+            Row {
+                IconButton(
+                    onClick = onOpenTroubleshooting,
+                    modifier = Modifier.testTag("hid_info_help_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.HelpOutline,
+                        contentDescription = "Troubleshooting",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
+                IconButton(
+                    onClick = { viewModel.refreshBluetooth() },
+                    modifier = Modifier.testTag("refresh_hid_info_button")
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Refresh Status",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                }
             }
         }
 
@@ -172,7 +185,8 @@ fun HidInfoScreen(
                 InfoRow(label = "Paired Devices", value = "${pairedDevices.size} paired devices found")
                 InfoRow(
                     label = "Typing Engine",
-                    value = when (typingState) {
+                    value = when (val state = typingState) {
+                        is TypingState.Preparing -> "Preparing (${state.secondsRemaining}s countdown)"
                         is TypingState.Typing -> "Active (Streaming reports)"
                         is TypingState.Paused -> "Paused"
                         is TypingState.Completed -> "Completed"

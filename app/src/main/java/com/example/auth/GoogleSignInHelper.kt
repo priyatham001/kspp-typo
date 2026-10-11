@@ -18,12 +18,10 @@ object GoogleSignInHelper {
         val credentialManager = CredentialManager.create(context)
         val serverClientId = try {
             val resId = context.resources.getIdentifier("default_web_client_id", "string", context.packageName)
-            if (resId != 0) context.getString(resId) else ""
+            val id = if (resId != 0) context.getString(resId) else ""
+            if (id.isNotBlank()) id else "779877421762-5memp0o8m6stoik4d7or0kmcssdvi591.apps.googleusercontent.com"
         } catch (e: Exception) {
-            ""
-        }
-        if (serverClientId.isBlank()) {
-            throw IllegalStateException("Google Sign-In is not configured yet (missing google-services.json / default_web_client_id).")
+            "779877421762-5memp0o8m6stoik4d7or0kmcssdvi591.apps.googleusercontent.com"
         }
 
         // Raw nonce for replay attack prevention

@@ -84,6 +84,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun UsbTypingScreen(
     viewModel: MainViewModel,
+    onOpenTroubleshooting: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -129,7 +130,7 @@ fun UsbTypingScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "USB Typing",
                     style = MaterialTheme.typography.headlineSmall,
@@ -142,24 +143,36 @@ fun UsbTypingScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            IconButton(
-                onClick = {
-                    scope.launch {
-                        isCheckingConnection = true
-                        viewModel.checkUsbConnection()
-                        isCheckingConnection = false
-                    }
-                },
-                modifier = Modifier.testTag("refresh_usb_connection_btn")
-            ) {
-                if (isCheckingConnection) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                } else {
+            Row {
+                IconButton(
+                    onClick = onOpenTroubleshooting,
+                    modifier = Modifier.testTag("usb_help_button")
+                ) {
                     Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = "Check Connection",
+                        imageVector = Icons.Default.HelpOutline,
+                        contentDescription = "Troubleshooting Help",
                         tint = MaterialTheme.colorScheme.primary
                     )
+                }
+                IconButton(
+                    onClick = {
+                        scope.launch {
+                            isCheckingConnection = true
+                            viewModel.checkUsbConnection()
+                            isCheckingConnection = false
+                        }
+                    },
+                    modifier = Modifier.testTag("refresh_usb_connection_btn")
+                ) {
+                    if (isCheckingConnection) {
+                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = "Check Connection",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
         }
@@ -314,7 +327,7 @@ fun UsbTypingScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
-                            .testTag("check_usb_sync_btn"),
+                            .testTag("usb_check_connection_button"),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
