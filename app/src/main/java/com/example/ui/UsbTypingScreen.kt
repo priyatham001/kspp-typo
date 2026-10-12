@@ -156,23 +156,24 @@ fun UsbTypingScreen(
                 }
                 IconButton(
                     onClick = {
+                        if (isCheckingConnection) return@IconButton
                         scope.launch {
                             isCheckingConnection = true
-                            viewModel.checkUsbConnection()
-                            isCheckingConnection = false
+                            try {
+                                viewModel.checkUsbConnection()
+                            } finally {
+                                isCheckingConnection = false
+                            }
                         }
                     },
-                    modifier = Modifier.testTag("refresh_usb_connection_btn")
+                    modifier = Modifier.testTag("refresh_usb_connection_btn"),
+                    enabled = !isCheckingConnection
                 ) {
-                    if (isCheckingConnection) {
-                        CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Check Connection",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                    RotatingRefreshIcon(
+                        isRotating = isCheckingConnection,
+                        contentDescription = "Check Connection",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
             }
         }
@@ -332,19 +333,13 @@ fun UsbTypingScreen(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
-                        if (isCheckingConnection) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = MaterialTheme.colorScheme.onPrimary,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Checking...")
-                        } else {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Check Connection")
-                        }
+                        RotatingRefreshIcon(
+                            isRotating = isCheckingConnection,
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(if (isCheckingConnection) "Checking..." else "Check Connection")
                     }
 
                     OutlinedButton(

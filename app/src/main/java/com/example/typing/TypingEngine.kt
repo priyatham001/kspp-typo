@@ -199,7 +199,8 @@ class TypingEngine(
                 for (char in text) {
                     if (!isActive) break
                     if (char == '\r') continue
-                    val stroke = KeyboardMapper.mapChar(char) ?: KeyboardMapper.mapChar(' ')
+                    val isCapsOn = hidManager.isCapsLockActive.value
+                    val stroke = KeyboardMapper.mapChar(char, isCapsOn) ?: KeyboardMapper.mapChar(' ', isCapsOn)
                     if (stroke != null) {
                         // Consecutive identical keys need a small release gap so host doesn't merge them
                         if (stroke.keyCode == prevKey) {
@@ -268,8 +269,9 @@ class TypingEngine(
                     }
 
                     // Map character with safe fallback so auto-typing never aborts mid-stream
-                    val stroke = KeyboardMapper.mapChar(effectiveChar)
-                        ?: KeyboardMapper.mapChar(KeyboardMapper.fallbackChar(effectiveChar))
+                    val isCapsOn = hidManager.isCapsLockActive.value
+                    val stroke = KeyboardMapper.mapChar(effectiveChar, isCapsOn)
+                        ?: KeyboardMapper.mapChar(KeyboardMapper.fallbackChar(effectiveChar), isCapsOn)
 
                     if (stroke != null) {
                         val currentDelay = _currentDelayMs.value

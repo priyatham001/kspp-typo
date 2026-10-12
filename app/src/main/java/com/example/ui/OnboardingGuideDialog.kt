@@ -662,21 +662,27 @@ private fun StepUsbSetup(
 
                 Button(
                     onClick = {
+                        if (isChecking) return@Button
                         scope.launch {
                             isChecking = true
-                            viewModel.checkUsbConnection()
-                            isChecking = false
+                            try {
+                                viewModel.checkUsbConnection()
+                            } finally {
+                                isChecking = false
+                            }
                         }
                     },
-                    modifier = Modifier.testTag("guide_check_usb_button")
+                    modifier = Modifier.testTag("guide_check_usb_button"),
+                    enabled = !isChecking
                 ) {
-                    if (isChecking) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.White)
-                    } else {
-                        Icon(Icons.Default.Refresh, contentDescription = "Check", modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Check Connection", fontSize = 11.sp)
-                    }
+                    RotatingRefreshIcon(
+                        isRotating = isChecking,
+                        modifier = Modifier.size(14.dp),
+                        contentDescription = "Check Connection",
+                        tint = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(if (isChecking) "Checking..." else "Check Connection", fontSize = 11.sp)
                 }
             }
         }
@@ -1132,15 +1138,30 @@ fun TroubleshootingBottomSheet(
 
                         TextButton(
                             onClick = {
-                                if (selectedMode == "BLUETOOTH") viewModel.refreshBluetooth()
-                                else viewModel.checkUsbConnection()
-                                runRealDiagnostics()
+                                if (isDiagnosing) return@TextButton
+                                scope.launch {
+                                    isDiagnosing = true
+                                    try {
+                                        if (selectedMode == "BLUETOOTH") viewModel.refreshBluetooth()
+                                        else viewModel.checkUsbConnection()
+                                        runRealDiagnostics()
+                                        kotlinx.coroutines.delay(650L)
+                                    } finally {
+                                        isDiagnosing = false
+                                    }
+                                }
                             },
+                            enabled = !isDiagnosing,
                             modifier = Modifier.testTag("troubleshoot_diagnose_button")
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = "Diagnose", modifier = Modifier.size(14.dp))
+                            RotatingRefreshIcon(
+                                isRotating = isDiagnosing,
+                                modifier = Modifier.size(14.dp),
+                                contentDescription = "Diagnose",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                             Spacer(modifier = Modifier.width(4.dp))
-                            Text("Diagnose Again", fontSize = 11.sp)
+                            Text(if (isDiagnosing) "Diagnosing..." else "Diagnose Again", fontSize = 11.sp)
                         }
                     }
 

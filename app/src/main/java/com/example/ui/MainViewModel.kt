@@ -114,6 +114,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isTestingAllKeys = MutableStateFlow(false)
     val isTestingAllKeys: StateFlow<Boolean> = _isTestingAllKeys.asStateFlow()
 
+    private val _isBluetoothRefreshing = MutableStateFlow(false)
+    val isBluetoothRefreshing: StateFlow<Boolean> = _isBluetoothRefreshing.asStateFlow()
+
     init {
         typingEngine.setDelay(settingsManager.defaultDelayMs.value)
         hidManager.refresh()
@@ -461,7 +464,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refreshBluetooth() {
-        hidManager.refresh()
+        if (_isBluetoothRefreshing.value) return
+        viewModelScope.launch {
+            _isBluetoothRefreshing.value = true
+            try {
+                hidManager.refresh()
+                kotlinx.coroutines.delay(650L)
+            } finally {
+                _isBluetoothRefreshing.value = false
+            }
+        }
     }
 
     fun openBluetoothSettings(context: Context) {

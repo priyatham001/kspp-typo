@@ -109,19 +109,21 @@ object KeyboardMapper {
      * Map a single character to a KeyStroke.
      * Returns null if the character is not supported on standard US QWERTY.
      */
-    fun mapChar(char: Char): KeyStroke? {
+    fun mapChar(char: Char, isCapsLockOn: Boolean = false): KeyStroke? {
         val normalized = normalizeChar(char)
         return when (normalized) {
             // Lowercase letters (a-z)
             in 'a'..'z' -> {
                 val offset = normalized - 'a'
-                KeyStroke((KEY_A + offset).toByte(), MOD_NONE)
+                val modifier = if (isCapsLockOn) MOD_LEFT_SHIFT else MOD_NONE
+                KeyStroke((KEY_A + offset).toByte(), modifier)
             }
 
-            // Uppercase letters (A-Z) -> SHIFT + Letter
+            // Uppercase letters (A-Z)
             in 'A'..'Z' -> {
                 val offset = normalized - 'A'
-                KeyStroke((KEY_A + offset).toByte(), MOD_LEFT_SHIFT)
+                val modifier = if (isCapsLockOn) MOD_NONE else MOD_LEFT_SHIFT
+                KeyStroke((KEY_A + offset).toByte(), modifier)
             }
 
             // Numbers 1-9

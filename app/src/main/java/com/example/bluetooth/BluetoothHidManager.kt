@@ -62,6 +62,9 @@ class BluetoothHidManager(private val context: Context) {
     private val _connectedDevice = MutableStateFlow<BluetoothDevice?>(null)
     val connectedDevice: StateFlow<BluetoothDevice?> = _connectedDevice.asStateFlow()
 
+    private val _isCapsLockActive = MutableStateFlow(false)
+    val isCapsLockActive: StateFlow<Boolean> = _isCapsLockActive.asStateFlow()
+
     private val executor = Executors.newSingleThreadExecutor()
 
     private val hidCallback = object : BluetoothHidDevice.Callback() {
@@ -70,14 +73,26 @@ class BluetoothHidManager(private val context: Context) {
             Log.d(tag, "onAppStatusChanged: registered=$registered, pluggedDevice=${pluggedDevice?.name}")
             _isHidRegistered.value = registered
             if (registered) {
+                // Application registration alone is NOT proof that a host is connected.
+                // Verify with active connection status before declaring host connected.
                 if (pluggedDevice != null) {
-                    val name = getSafeDeviceName(pluggedDevice)
-                    _connectedDevice.value = pluggedDevice
-                    _connectionState.value = HidConnectionState.Connected(pluggedDevice, name)
+                    val isConnected = try {
+                        hidDevice?.getConnectionState(pluggedDevice) == BluetoothProfile.STATE_CONNECTED
+                    } catch (e: Exception) {
+                        false
+                    }
+                    if (isConnected) {
+                        val name = getSafeDeviceName(pluggedDevice)
+                        _connectedDevice.value = pluggedDevice
+                        _connectionState.value = HidConnectionState.Connected(pluggedDevice, name)
+                    } else {
+                        autoDetectConnectedDevice()
+                    }
                 } else {
                     autoDetectConnectedDevice()
                 }
             } else {
+                _connectedDevice.value = null
                 _connectionState.value = HidConnectionState.NotSupported("HID App registration failed or unregistered.")
             }
         }
@@ -95,6 +110,9 @@ class BluetoothHidManager(private val context: Context) {
                     _connectionState.value = HidConnectionState.Connecting(devName)
                 }
                 BluetoothProfile.STATE_DISCONNECTING -> {
+                    if (_connectedDevice.value?.address == device.address) {
+                        _connectedDevice.value = null
+                    }
                     _connectionState.value = HidConnectionState.Disconnected
                 }
                 BluetoothProfile.STATE_DISCONNECTED -> {
@@ -123,6 +141,12 @@ class BluetoothHidManager(private val context: Context) {
         override fun onSetReport(device: BluetoothDevice?, type: Byte, id: Byte, data: ByteArray?) {
             super.onSetReport(device, type, id, data)
             Log.d(tag, "onSetReport: type=$type, id=$id, dataSize=${data?.size}")
+            if (data != null && data.isNotEmpty()) {
+                val ledByte = data[0].toInt()
+                val isCaps = (ledByte and 0x02) != 0
+                _isCapsLockActive.value = isCaps
+                Log.d(tag, "Host Caps Lock LED status: $isCaps (ledByte=0x${Integer.toHexString(ledByte and 0xFF)})")
+            }
             // Acknowledge report from host (e.g. keyboard LED status)
             if (device != null && hidDevice != null) {
                 try {
@@ -176,6 +200,7 @@ class BluetoothHidManager(private val context: Context) {
                 BluetoothAdapter.ACTION_STATE_CHANGED -> {
                     val state = intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
                     if (state == BluetoothAdapter.STATE_TURNING_OFF || state == BluetoothAdapter.STATE_OFF) {
+                        _connectedDevice.value = null
                         _connectionState.value = HidConnectionState.BluetoothDisabled
                     } else if (state == BluetoothAdapter.STATE_ON) {
                         refresh()
@@ -183,6 +208,26 @@ class BluetoothHidManager(private val context: Context) {
                 }
                 BluetoothDevice.ACTION_BOND_STATE_CHANGED -> {
                     updatePairedDevices()
+                }
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                    val device = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    }
+                    Log.d(tag, "ACTION_ACL_DISCONNECTED received for device: ${device?.address}")
+                    if (device != null && device.address == _connectedDevice.value?.address) {
+                        Log.d(tag, "Connected host ${device.address} dropped ACL link. Clearing connected host.")
+                        _connectedDevice.value = null
+                        _connectionState.value = HidConnectionState.Disconnected
+                    } else {
+                        autoDetectConnectedDevice()
+                    }
+                }
+                BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                    Log.d(tag, "ACTION_ACL_CONNECTED received")
+                    autoDetectConnectedDevice()
                 }
             }
         }
@@ -193,6 +238,8 @@ class BluetoothHidManager(private val context: Context) {
             val filter = IntentFilter().apply {
                 addAction(BluetoothAdapter.ACTION_STATE_CHANGED)
                 addAction(BluetoothDevice.ACTION_BOND_STATE_CHANGED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+                addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
             }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.registerReceiver(bluetoothReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
@@ -222,16 +269,19 @@ class BluetoothHidManager(private val context: Context) {
     fun refresh() {
         val adapter = bluetoothAdapter
         if (adapter == null) {
+            _connectedDevice.value = null
             _connectionState.value = HidConnectionState.Unavailable
             return
         }
 
         if (!hasBluetoothPermissions()) {
+            _connectedDevice.value = null
             _connectionState.value = HidConnectionState.PermissionRequired
             return
         }
 
         if (!adapter.isEnabled) {
+            _connectedDevice.value = null
             _connectionState.value = HidConnectionState.BluetoothDisabled
             return
         }
@@ -261,21 +311,37 @@ class BluetoothHidManager(private val context: Context) {
 
     @SuppressLint("MissingPermission")
     fun autoDetectConnectedDevice() {
-        if (!hasBluetoothPermissions()) return
+        if (!hasBluetoothPermissions()) {
+            _connectedDevice.value = null
+            _connectionState.value = HidConnectionState.PermissionRequired
+            return
+        }
         val dev = hidDevice ?: return
         try {
-            val connectedList = dev.connectedDevices
-            val alreadyConnected = connectedList.firstOrNull() ?:
-                dev.getDevicesMatchingConnectionStates(intArrayOf(BluetoothProfile.STATE_CONNECTED)).firstOrNull()
-            if (alreadyConnected != null) {
-                val devName = getSafeDeviceName(alreadyConnected)
-                Log.d(tag, "Auto-detected already connected device: $devName (${alreadyConnected.address})")
-                _connectedDevice.value = alreadyConnected
-                _connectionState.value = HidConnectionState.Connected(alreadyConnected, devName)
-                return
-            }
-            if (_connectedDevice.value == null && _connectionState.value !is HidConnectionState.Connecting) {
-                _connectionState.value = HidConnectionState.Disconnected
+            val connectedList = dev.connectedDevices ?: emptyList()
+            val stateConnectedList = dev.getDevicesMatchingConnectionStates(intArrayOf(BluetoothProfile.STATE_CONNECTED)) ?: emptyList()
+            val candidate = connectedList.firstOrNull() ?: stateConnectedList.firstOrNull()
+
+            val genuinelyConnected = if (candidate != null) {
+                try {
+                    val state = dev.getConnectionState(candidate)
+                    if (state == BluetoothProfile.STATE_CONNECTED) candidate else null
+                } catch (e: Exception) {
+                    null
+                }
+            } else null
+
+            if (genuinelyConnected != null) {
+                val devName = getSafeDeviceName(genuinelyConnected)
+                Log.d(tag, "Auto-detected genuinely connected device: $devName (${genuinelyConnected.address})")
+                _connectedDevice.value = genuinelyConnected
+                _connectionState.value = HidConnectionState.Connected(genuinelyConnected, devName)
+            } else {
+                // Host is genuinely disconnected / switched off
+                _connectedDevice.value = null
+                if (_connectionState.value !is HidConnectionState.Connecting) {
+                    _connectionState.value = HidConnectionState.Disconnected
+                }
             }
         } catch (e: Exception) {
             Log.w(tag, "Notice checking connected devices", e)
@@ -440,18 +506,19 @@ class BluetoothHidManager(private val context: Context) {
         val adapter = bluetoothAdapter
         val isBtOn = adapter?.isEnabled == true
         val target = _connectedDevice.value
-        val targetName = target?.let { getSafeDeviceName(it) } ?: "None"
-        val targetAddress = target?.address ?: "N/A"
+        val isConnected = _connectionState.value is HidConnectionState.Connected
+        val targetName = if (isConnected) (target?.let { getSafeDeviceName(it) } ?: "None") else "None"
+        val targetAddress = if (isConnected) (target?.address ?: "None") else "None"
         val stateName = when (val s = _connectionState.value) {
-            is HidConnectionState.Connected -> "Connected (to ${s.deviceName})"
-            is HidConnectionState.Connecting -> "Connecting (${s.deviceName ?: "host"})"
-            is HidConnectionState.Disconnected -> if (_isHidRegistered.value) "Ready (Profile Registered, Waiting for Host)" else "Disconnected"
-            is HidConnectionState.Registering -> "Registering HID Application Profile"
-            is HidConnectionState.PermissionRequired -> "Permission Required"
-            is HidConnectionState.BluetoothDisabled -> "Bluetooth Disabled"
-            is HidConnectionState.Unavailable -> "Bluetooth Hardware Unavailable"
-            is HidConnectionState.NotSupported -> "HID Not Supported: ${s.reason}"
-            is HidConnectionState.Error -> "Error: ${s.message}"
+            is HidConnectionState.Connected -> "HOST CONNECTED (to ${s.deviceName})"
+            is HidConnectionState.Connecting -> "CONNECTING (${s.deviceName ?: "host"})"
+            is HidConnectionState.Disconnected -> if (_isHidRegistered.value) "HOST DISCONNECTED (HID App Registered, Awaiting Host)" else "HOST DISCONNECTED"
+            is HidConnectionState.Registering -> "REGISTERING PROFILE"
+            is HidConnectionState.PermissionRequired -> "PERMISSION REQUIRED"
+            is HidConnectionState.BluetoothDisabled -> "BLUETOOTH DISABLED"
+            is HidConnectionState.Unavailable -> "BLUETOOTH HARDWARE UNAVAILABLE"
+            is HidConnectionState.NotSupported -> "HID NOT SUPPORTED: ${s.reason}"
+            is HidConnectionState.Error -> "ERROR: ${s.message}"
         }
 
         return buildString {

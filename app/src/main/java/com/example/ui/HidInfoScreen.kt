@@ -22,15 +22,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bluetooth
-import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Devices
 import androidx.compose.material.icons.filled.HelpOutline
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Keyboard
-import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.PowerSettingsNew
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -43,7 +42,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,8 +70,10 @@ fun HidInfoScreen(
     val typingDelayMs by viewModel.typingDelayMs.collectAsState()
     val connectedDevice by viewModel.connectedDevice.collectAsState()
     val pairedDevices by viewModel.pairedDevices.collectAsState()
+    val isBluetoothRefreshing by viewModel.isBluetoothRefreshing.collectAsState()
 
     val scrollState = rememberScrollState()
+    val isConnected = connectionState is HidConnectionState.Connected
 
     Column(
         modifier = modifier
@@ -114,10 +114,11 @@ fun HidInfoScreen(
                 }
                 IconButton(
                     onClick = { viewModel.refreshBluetooth() },
-                    modifier = Modifier.testTag("refresh_hid_info_button")
+                    modifier = Modifier.testTag("refresh_hid_info_button"),
+                    enabled = !isBluetoothRefreshing
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
+                    RotatingRefreshIcon(
+                        isRotating = isBluetoothRefreshing,
                         contentDescription = "Refresh Status",
                         tint = MaterialTheme.colorScheme.primary
                     )
@@ -148,16 +149,16 @@ fun HidInfoScreen(
                     )
                     Spacer(modifier = Modifier.width(10.dp))
                     Text(
-                        text = when (val s = connectionState) {
+                        text = when (connectionState) {
                             is HidConnectionState.Connected -> "HOST CONNECTED"
                             is HidConnectionState.Connecting -> "CONNECTING TO HOST"
-                            is HidConnectionState.Disconnected -> if (isHidRegistered) "HID READY (AWAITING HOST)" else "DISCONNECTED"
+                            is HidConnectionState.Disconnected -> if (isHidRegistered) "HOST DISCONNECTED (READY FOR HOST)" else "HOST DISCONNECTED"
                             is HidConnectionState.Registering -> "REGISTERING PROFILE"
                             is HidConnectionState.BluetoothDisabled -> "BLUETOOTH DISABLED"
                             is HidConnectionState.PermissionRequired -> "PERMISSION REQUIRED"
                             is HidConnectionState.Unavailable -> "BLUETOOTH UNAVAILABLE"
                             is HidConnectionState.NotSupported -> "HID NOT SUPPORTED"
-                            is HidConnectionState.Error -> "ERROR"
+                            is HidConnectionState.Error -> "CONNECTION ERROR"
                         },
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 1.sp,
@@ -172,7 +173,24 @@ fun HidInfoScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                InfoRow(label = "HID App Registered", value = if (isHidRegistered) "YES (Active in Bluetooth stack)" else "NO / Inactive")
+                InfoRow(
+                    label = "Connection Status",
+                    value = when (connectionState) {
+                        is HidConnectionState.Connected -> "Connected"
+                        is HidConnectionState.Connecting -> "Connecting"
+                        is HidConnectionState.Disconnected -> "Disconnected"
+                        is HidConnectionState.BluetoothDisabled -> "Bluetooth Disabled"
+                        is HidConnectionState.PermissionRequired -> "Permission Required"
+                        is HidConnectionState.Registering -> "Registering Profile"
+                        is HidConnectionState.Unavailable -> "Bluetooth Unavailable"
+                        is HidConnectionState.NotSupported -> "Not Supported"
+                        is HidConnectionState.Error -> "Error"
+                    }
+                )
+                InfoRow(
+                    label = "HID App Registered",
+                    value = if (isHidRegistered) "YES (Active in Bluetooth stack)" else "NO / Inactive"
+                )
                 InfoRow(
                     label = "Connected Host Name",
                     value = when (val s = connectionState) {
@@ -181,8 +199,14 @@ fun HidInfoScreen(
                         else -> "None"
                     }
                 )
-                InfoRow(label = "Host MAC Address", value = connectedDevice?.address ?: "N/A")
-                InfoRow(label = "Paired Devices", value = "${pairedDevices.size} paired devices found")
+                InfoRow(
+                    label = "Host MAC Address",
+                    value = if (isConnected) (connectedDevice?.address ?: "N/A") else "None"
+                )
+                InfoRow(
+                    label = "Paired Devices Count",
+                    value = "${pairedDevices.size} paired"
+                )
                 InfoRow(
                     label = "Typing Engine",
                     value = when (val state = typingState) {
@@ -223,6 +247,119 @@ fun HidInfoScreen(
                         Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("Bluetooth Settings", fontSize = 11.sp)
+                    }
+                }
+            }
+        }
+
+        // Dedicated Paired Devices Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = CardDefaults.outlinedCardBorder()
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            imageVector = Icons.Default.Devices,
+                            contentDescription = "Paired Devices",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Paired Devices (${pairedDevices.size})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    if (isConnected) {
+                        OutlinedButton(
+                            onClick = { viewModel.disconnectDevice() },
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Icon(Icons.Default.PowerSettingsNew, contentDescription = "Disconnect", modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Disconnect", fontSize = 11.sp)
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                if (pairedDevices.isEmpty()) {
+                    Text(
+                        text = "No paired devices found on phone.\nTap 'Make Discoverable' above and pair with your Windows PC in Windows Settings > Bluetooth.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    pairedDevices.forEach { device ->
+                        val isThisDeviceConnected = isConnected && connectedDevice?.address == device.address
+                        val devName = try { device.name ?: device.address } catch (_: SecurityException) { device.address }
+
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isThisDeviceConnected) StatusGreen.copy(alpha = 0.08f)
+                                else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = devName,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = device.address,
+                                        fontFamily = FontFamily.Monospace,
+                                        fontSize = 11.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = if (isThisDeviceConnected) "Status: Connected (Active Host)" else "Status: Paired (Disconnected)",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = if (isThisDeviceConnected) StatusGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                if (!isThisDeviceConnected) {
+                                    Button(
+                                        onClick = { viewModel.connectDevice(device) },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Connect", fontSize = 11.sp)
+                                    }
+                                } else {
+                                    Icon(
+                                        imageVector = Icons.Default.CheckCircle,
+                                        contentDescription = "Active Host",
+                                        tint = StatusGreen,
+                                        modifier = Modifier.size(20.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }

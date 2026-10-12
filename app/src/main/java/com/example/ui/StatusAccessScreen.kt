@@ -30,6 +30,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -107,6 +113,9 @@ fun StatusAccessScreen(
             StatusYellow
         )
     }
+
+    val scope = rememberCoroutineScope()
+    var isRefreshing by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -198,7 +207,19 @@ fun StatusAccessScreen(
                     }
 
                     Button(
-                        onClick = onRefresh,
+                        onClick = {
+                            if (isRefreshing) return@Button
+                            scope.launch {
+                                isRefreshing = true
+                                try {
+                                    onRefresh()
+                                    kotlinx.coroutines.delay(650L)
+                                } finally {
+                                    isRefreshing = false
+                                }
+                            }
+                        },
+                        enabled = !isRefreshing,
                         modifier = Modifier
                             .fillMaxWidth()
                             .testTag("refresh_status_button"),
@@ -206,9 +227,14 @@ fun StatusAccessScreen(
                             containerColor = MaterialTheme.colorScheme.primary
                         )
                     ) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh")
+                        RotatingRefreshIcon(
+                            isRotating = isRefreshing,
+                            modifier = Modifier.size(18.dp),
+                            contentDescription = "Refresh Status",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("CHECK STATUS AGAIN", fontWeight = FontWeight.Bold)
+                        Text(if (isRefreshing) "CHECKING STATUS..." else "CHECK STATUS AGAIN", fontWeight = FontWeight.Bold)
                     }
 
                     OutlinedButton(

@@ -266,4 +266,50 @@ class ExampleUnitTest {
             assertNotNull(target.targetTab)
         }
     }
+
+    @Test
+    fun testKeyboardMapping_capsLockInversion() {
+        // Test examples: "Hello world", "hello WORLD", "ABCdef123", "My name is John.", "aBcDeFg"
+        val testSamples = listOf("Hello world", "hello WORLD", "ABCdef123", "My name is John.", "aBcDeFg")
+
+        for (sample in testSamples) {
+            for (char in sample) {
+                val strokeCapsOff = KeyboardMapper.mapChar(char, isCapsLockOn = false)
+                val strokeCapsOn = KeyboardMapper.mapChar(char, isCapsLockOn = true)
+
+                assertNotNull("Character '$char' should be mappable", strokeCapsOff)
+                assertNotNull("Character '$char' should be mappable with caps on", strokeCapsOn)
+
+                if (char in 'a'..'z') {
+                    // With Caps OFF: lowercase needs NO Shift
+                    assertEquals(KeyboardDescriptor.MOD_NONE, strokeCapsOff!!.modifier)
+                    // With Caps ON: lowercase needs SHIFT on host to invert back to lowercase
+                    assertEquals(KeyboardDescriptor.MOD_LEFT_SHIFT, strokeCapsOn!!.modifier)
+                } else if (char in 'A'..'Z') {
+                    // With Caps OFF: uppercase needs SHIFT
+                    assertEquals(KeyboardDescriptor.MOD_LEFT_SHIFT, strokeCapsOff!!.modifier)
+                    // With Caps ON: uppercase needs NO Shift on host
+                    assertEquals(KeyboardDescriptor.MOD_NONE, strokeCapsOn!!.modifier)
+                } else if (char in '0'..'9' || char == ' ' || char == '.') {
+                    // Non-letters should maintain identical modifier regardless of Caps Lock
+                    assertEquals(strokeCapsOff!!.modifier, strokeCapsOn!!.modifier)
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testHidConnectionState_distinctions() {
+        val disconnected = com.example.bluetooth.HidConnectionState.Disconnected
+        val disabled = com.example.bluetooth.HidConnectionState.BluetoothDisabled
+        val registering = com.example.bluetooth.HidConnectionState.Registering
+        val connecting = com.example.bluetooth.HidConnectionState.Connecting("LAPTOP")
+        val error = com.example.bluetooth.HidConnectionState.Error("Link failure")
+
+        assertTrue(disconnected is com.example.bluetooth.HidConnectionState)
+        assertTrue(disabled is com.example.bluetooth.HidConnectionState)
+        assertTrue(registering is com.example.bluetooth.HidConnectionState)
+        assertEquals("LAPTOP", connecting.deviceName)
+        assertEquals("Link failure", error.message)
+    }
 }

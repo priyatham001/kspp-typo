@@ -69,6 +69,7 @@ fun SettingsScreen(
     val keepScreenAwake by viewModel.keepScreenAwake.collectAsState()
     val themeMode by viewModel.themeMode.collectAsState()
     val typingDelayMs by viewModel.typingDelayMs.collectAsState()
+    val isBluetoothRefreshing by viewModel.isBluetoothRefreshing.collectAsState()
 
     val scrollState = rememberScrollState()
 
@@ -230,10 +231,13 @@ fun SettingsScreen(
                         )
                     }
 
-                    IconButton(onClick = { viewModel.refreshBluetooth() }) {
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = "Refresh",
+                    IconButton(
+                        onClick = { viewModel.refreshBluetooth() },
+                        enabled = !isBluetoothRefreshing
+                    ) {
+                        RotatingRefreshIcon(
+                            isRotating = isBluetoothRefreshing,
+                            contentDescription = "Refresh Bluetooth",
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
