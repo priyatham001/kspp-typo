@@ -341,7 +341,9 @@ fun OnboardingGuideDialog(
                     if (currentStepIndex > 0) {
                         OutlinedButton(
                             onClick = { currentStepIndex-- },
-                            modifier = Modifier.testTag("onboarding_back_button")
+                            modifier = Modifier
+                                .bounceClick()
+                                .testTag("onboarding_back_button")
                         ) {
                             Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
@@ -353,7 +355,9 @@ fun OnboardingGuideDialog(
                                 viewModel.setTutorialCompleted(true)
                                 onDismiss()
                             },
-                            modifier = Modifier.testTag("onboarding_skip_button")
+                            modifier = Modifier
+                                .bounceClick()
+                                .testTag("onboarding_skip_button")
                         ) {
                             Text("Skip Tutorial", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
@@ -362,7 +366,9 @@ fun OnboardingGuideDialog(
                     if (currentStepIndex < totalSteps - 1) {
                         Button(
                             onClick = { currentStepIndex++ },
-                            modifier = Modifier.testTag("onboarding_next_button"),
+                            modifier = Modifier
+                                .bounceClick()
+                                .testTag("onboarding_next_button"),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
                             Text("Next", fontWeight = FontWeight.Bold)
@@ -376,7 +382,9 @@ fun OnboardingGuideDialog(
                                 onDismiss()
                                 onNavigateToTab(ScreenTab.EDITOR)
                             },
-                            modifier = Modifier.testTag("onboarding_finish_button"),
+                            modifier = Modifier
+                                .bounceClick()
+                                .testTag("onboarding_finish_button"),
                             colors = ButtonDefaults.buttonColors(containerColor = StatusGreen)
                         ) {
                             Icon(Icons.Default.Check, contentDescription = "Finish", modifier = Modifier.size(18.dp))
@@ -667,12 +675,15 @@ private fun StepUsbSetup(
                             isChecking = true
                             try {
                                 viewModel.checkUsbConnection()
+                                kotlinx.coroutines.delay(800L)
                             } finally {
                                 isChecking = false
                             }
                         }
                     },
-                    modifier = Modifier.testTag("guide_check_usb_button"),
+                    modifier = Modifier
+                        .bounceClick()
+                        .testTag("guide_check_usb_button"),
                     enabled = !isChecking
                 ) {
                     RotatingRefreshIcon(

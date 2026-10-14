@@ -231,16 +231,13 @@ fun SettingsScreen(
                         )
                     }
 
-                    IconButton(
+                    RotatingRefreshIconButton(
                         onClick = { viewModel.refreshBluetooth() },
-                        enabled = !isBluetoothRefreshing
-                    ) {
-                        RotatingRefreshIcon(
-                            isRotating = isBluetoothRefreshing,
-                            contentDescription = "Refresh Bluetooth",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
-                    }
+                        isRotating = isBluetoothRefreshing,
+                        modifier = Modifier.testTag("refresh_bt_settings_button"),
+                        contentDescription = "Refresh Bluetooth",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
@@ -453,7 +450,10 @@ fun SettingsScreen(
                     onClick = { viewModel.lockNow() },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
                     shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth().testTag("settings_lock_now_button")
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .bounceClick()
+                        .testTag("settings_lock_now_button")
                 ) {
                     Text("LOCK APP NOW (EMERGENCY STOP)", fontWeight = FontWeight.Bold)
                 }
@@ -486,7 +486,10 @@ fun SettingsScreen(
                 ) {
                     Button(
                         onClick = onShowTutorialAgain,
-                        modifier = Modifier.weight(1f).testTag("show_tutorial_again_button"),
+                        modifier = Modifier
+                            .weight(1f)
+                            .bounceClick()
+                            .testTag("show_tutorial_again_button"),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                     ) {
                         Text("Show Tutorial Again", fontSize = 12.sp, fontWeight = FontWeight.Bold)
@@ -494,7 +497,10 @@ fun SettingsScreen(
 
                     OutlinedButton(
                         onClick = onOpenTroubleshooting,
-                        modifier = Modifier.weight(1f).testTag("settings_open_troubleshooting_button")
+                        modifier = Modifier
+                            .weight(1f)
+                            .bounceClick()
+                            .testTag("settings_open_troubleshooting_button")
                     ) {
                         Text("Troubleshoot", fontSize = 12.sp)
                     }

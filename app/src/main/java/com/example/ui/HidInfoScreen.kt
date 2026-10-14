@@ -104,7 +104,9 @@ fun HidInfoScreen(
             Row {
                 IconButton(
                     onClick = onOpenTroubleshooting,
-                    modifier = Modifier.testTag("hid_info_help_button")
+                    modifier = Modifier
+                        .testTag("hid_info_help_button")
+                        .bounceClick()
                 ) {
                     Icon(
                         imageVector = Icons.Default.HelpOutline,
@@ -112,17 +114,13 @@ fun HidInfoScreen(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
-                IconButton(
+                RotatingRefreshIconButton(
                     onClick = { viewModel.refreshBluetooth() },
+                    isRotating = isBluetoothRefreshing,
                     modifier = Modifier.testTag("refresh_hid_info_button"),
-                    enabled = !isBluetoothRefreshing
-                ) {
-                    RotatingRefreshIcon(
-                        isRotating = isBluetoothRefreshing,
-                        contentDescription = "Refresh Status",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
+                    contentDescription = "Refresh Status",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
@@ -230,7 +228,9 @@ fun HidInfoScreen(
                 ) {
                     Button(
                         onClick = { viewModel.requestDiscoverability(context) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .bounceClick(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                         shape = RoundedCornerShape(10.dp)
                     ) {
@@ -241,7 +241,9 @@ fun HidInfoScreen(
 
                     OutlinedButton(
                         onClick = { viewModel.openBluetoothSettings(context) },
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier
+                            .weight(1f)
+                            .bounceClick(),
                         shape = RoundedCornerShape(10.dp)
                     ) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings", modifier = Modifier.size(16.dp))
@@ -283,6 +285,7 @@ fun HidInfoScreen(
                         OutlinedButton(
                             onClick = { viewModel.disconnectDevice() },
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = StatusRed),
+                            modifier = Modifier.bounceClick(),
                             shape = RoundedCornerShape(8.dp)
                         ) {
                             Icon(Icons.Default.PowerSettingsNew, contentDescription = "Disconnect", modifier = Modifier.size(14.dp))
@@ -346,6 +349,7 @@ fun HidInfoScreen(
                                 if (!isThisDeviceConnected) {
                                     Button(
                                         onClick = { viewModel.connectDevice(device) },
+                                        modifier = Modifier.bounceClick(),
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
                                         Text("Connect", fontSize = 11.sp)

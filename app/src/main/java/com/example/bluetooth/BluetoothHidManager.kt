@@ -443,11 +443,51 @@ class BluetoothHidManager(private val context: Context) {
     }
 
     /**
-     * Send an 8-byte HID keyboard report to the connected Bluetooth host.
-     * Report ID 1 matches the descriptor's REPORT_ID (1).
+     * Verifies that the connected Bluetooth host is genuinely connected in the OS stack.
+     * Never falsely reports connected if link has dropped.
      */
     @SuppressLint("MissingPermission")
-    fun sendReport(reportData: ByteArray): Boolean {
+    fun verifyRealConnection(): Boolean {
+        if (!hasBluetoothPermissions()) {
+            _connectedDevice.value = null
+            _connectionState.value = HidConnectionState.PermissionRequired
+            return false
+        }
+        val dev = hidDevice ?: run {
+            _connectedDevice.value = null
+            _connectionState.value = HidConnectionState.Disconnected
+            return false
+        }
+        val target = _connectedDevice.value ?: run {
+            autoDetectConnectedDevice()
+            return _connectedDevice.value != null
+        }
+
+        return try {
+            val state = dev.getConnectionState(target)
+            if (state == BluetoothProfile.STATE_CONNECTED) {
+                true
+            } else {
+                _connectedDevice.value = null
+                _connectionState.value = HidConnectionState.Disconnected
+                false
+            }
+        } catch (e: Exception) {
+            _connectedDevice.value = null
+            _connectionState.value = HidConnectionState.Disconnected
+            false
+        }
+    }
+
+    private val reportSendLock = Any()
+
+    /**
+     * Send an 8-byte HID keyboard report to the connected Bluetooth host.
+     * Report ID 1 matches the descriptor's REPORT_ID (1).
+     * Synchronized to prevent concurrent thread interleaving on the Bluetooth socket.
+     */
+    @SuppressLint("MissingPermission")
+    fun sendReport(reportData: ByteArray): Boolean = synchronized(reportSendLock) {
         val dev = hidDevice
         val target = _connectedDevice.value
         if (dev == null || target == null) {

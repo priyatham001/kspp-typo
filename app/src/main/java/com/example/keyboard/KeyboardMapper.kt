@@ -237,4 +237,55 @@ object KeyboardMapper {
         append("!@#$%^&*()-_=+\n")
         append("[]{};:'\",.<>/?\\`~\n")
     }
+
+    /**
+     * Reverses a KeyStroke back to the exact character it produces on standard US QWERTY host.
+     */
+    fun strokeToChar(stroke: KeyStroke, isCapsLockOn: Boolean = false): Char? {
+        val keyCode = stroke.keyCode
+        val isShift = (stroke.modifier.toInt() and MOD_LEFT_SHIFT.toInt()) != 0
+
+        return when {
+            keyCode in KeyboardDescriptor.KEY_A..KeyboardDescriptor.KEY_Z -> {
+                val offset = keyCode - KeyboardDescriptor.KEY_A
+                val isUpper = if (isCapsLockOn) !isShift else isShift
+                if (isUpper) ('A' + offset) else ('a' + offset)
+            }
+            keyCode in KeyboardDescriptor.KEY_1..KeyboardDescriptor.KEY_9 -> {
+                val num = (keyCode - KeyboardDescriptor.KEY_1) + 1
+                if (isShift) {
+                    when (num) {
+                        1 -> '!'
+                        2 -> '@'
+                        3 -> '#'
+                        4 -> '$'
+                        5 -> '%'
+                        6 -> '^'
+                        7 -> '&'
+                        8 -> '*'
+                        9 -> '('
+                        else -> null
+                    }
+                } else {
+                    ('0' + num)
+                }
+            }
+            keyCode == KeyboardDescriptor.KEY_0 -> if (isShift) ')' else '0'
+            keyCode == KeyboardDescriptor.KEY_SPACE -> ' '
+            keyCode == KeyboardDescriptor.KEY_TAB -> '\t'
+            keyCode == KeyboardDescriptor.KEY_ENTER -> '\n'
+            keyCode == KeyboardDescriptor.KEY_MINUS -> if (isShift) '_' else '-'
+            keyCode == KeyboardDescriptor.KEY_EQUAL -> if (isShift) '+' else '='
+            keyCode == KeyboardDescriptor.KEY_LEFTBRACE -> if (isShift) '{' else '['
+            keyCode == KeyboardDescriptor.KEY_RIGHTBRACE -> if (isShift) '}' else ']'
+            keyCode == KeyboardDescriptor.KEY_BACKSLASH -> if (isShift) '|' else '\\'
+            keyCode == KeyboardDescriptor.KEY_SEMICOLON -> if (isShift) ':' else ';'
+            keyCode == KeyboardDescriptor.KEY_APOSTROPHE -> if (isShift) '"' else '\''
+            keyCode == KeyboardDescriptor.KEY_GRAVE -> if (isShift) '~' else '`'
+            keyCode == KeyboardDescriptor.KEY_COMMA -> if (isShift) '<' else ','
+            keyCode == KeyboardDescriptor.KEY_DOT -> if (isShift) '>' else '.'
+            keyCode == KeyboardDescriptor.KEY_SLASH -> if (isShift) '?' else '/'
+            else -> null
+        }
+    }
 }

@@ -146,7 +146,9 @@ fun UsbTypingScreen(
             Row {
                 IconButton(
                     onClick = onOpenTroubleshooting,
-                    modifier = Modifier.testTag("usb_help_button")
+                    modifier = Modifier
+                        .testTag("usb_help_button")
+                        .bounceClick()
                 ) {
                     Icon(
                         imageVector = Icons.Default.HelpOutline,
@@ -154,27 +156,24 @@ fun UsbTypingScreen(
                         tint = MaterialTheme.colorScheme.primary
                     )
                 }
-                IconButton(
+                RotatingRefreshIconButton(
                     onClick = {
-                        if (isCheckingConnection) return@IconButton
+                        if (isCheckingConnection) return@RotatingRefreshIconButton
                         scope.launch {
                             isCheckingConnection = true
                             try {
                                 viewModel.checkUsbConnection()
+                                kotlinx.coroutines.delay(800L)
                             } finally {
                                 isCheckingConnection = false
                             }
                         }
                     },
                     modifier = Modifier.testTag("refresh_usb_connection_btn"),
-                    enabled = !isCheckingConnection
-                ) {
-                    RotatingRefreshIcon(
-                        isRotating = isCheckingConnection,
-                        contentDescription = "Check Connection",
-                        tint = MaterialTheme.colorScheme.primary
-                    )
-                }
+                    isRotating = isCheckingConnection,
+                    contentDescription = "Check Connection",
+                    tint = MaterialTheme.colorScheme.primary
+                )
             }
         }
 
@@ -322,12 +321,17 @@ fun UsbTypingScreen(
                         onClick = {
                             scope.launch {
                                 isCheckingConnection = true
-                                viewModel.checkUsbConnection()
-                                isCheckingConnection = false
+                                try {
+                                    viewModel.checkUsbConnection()
+                                    kotlinx.coroutines.delay(800L)
+                                } finally {
+                                    isCheckingConnection = false
+                                }
                             }
                         },
                         modifier = Modifier
                             .weight(1f)
+                            .bounceClick()
                             .testTag("usb_check_connection_button"),
                         colors = ButtonDefaults.buttonColors(
                             containerColor = MaterialTheme.colorScheme.primary
@@ -344,7 +348,9 @@ fun UsbTypingScreen(
 
                     OutlinedButton(
                         onClick = { viewModel.shareCompanionFile(context) },
-                        modifier = Modifier.testTag("share_companion_exe_btn")
+                        modifier = Modifier
+                            .bounceClick()
+                            .testTag("share_companion_exe_btn")
                     ) {
                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
@@ -755,6 +761,8 @@ fun UsbTypingScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
+                                .bounceClick()
+                                .pulsingGlow(MaterialTheme.colorScheme.primary, enabled = isSynced && editorText.isNotBlank())
                                 .testTag("usb_start_typing_btn"),
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = MaterialTheme.colorScheme.primary,

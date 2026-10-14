@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Bluetooth
 import androidx.compose.material.icons.filled.BluetoothConnected
 import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FolderOpen
@@ -68,6 +69,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,7 +81,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.bluetooth.HidConnectionState
@@ -101,6 +105,7 @@ fun HomeScreen(
     modifier: Modifier = Modifier
 ) {
     val connectionState by viewModel.connectionState.collectAsState()
+    val pairedDevices by viewModel.pairedDevices.collectAsState()
     val typingState by viewModel.typingState.collectAsState()
     val typingDelayMs by viewModel.typingDelayMs.collectAsState()
     val editorText by viewModel.editorText.collectAsState()
@@ -116,6 +121,7 @@ fun HomeScreen(
     val allScripts by viewModel.allScripts.collectAsState()
     val scrollState = rememberScrollState()
     val isApproved = userProfile?.hasActiveAccess == true && serviceControl.isOperational
+    val isBluetoothRefreshing by viewModel.isBluetoothRefreshing.collectAsState()
 
     Column(
         modifier = modifier
@@ -157,7 +163,9 @@ fun HomeScreen(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         IconButton(
                             onClick = onOpenTutorial,
-                            modifier = Modifier.testTag("home_tutorial_guide_button")
+                            modifier = Modifier
+                                .testTag("home_tutorial_guide_button")
+                                .bounceClick()
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Info,
@@ -169,7 +177,9 @@ fun HomeScreen(
 
                         IconButton(
                             onClick = onOpenTroubleshooting,
-                            modifier = Modifier.testTag("home_troubleshoot_button")
+                            modifier = Modifier
+                                .testTag("home_troubleshoot_button")
+                                .bounceClick()
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Warning,
@@ -179,12 +189,21 @@ fun HomeScreen(
                             )
                         }
 
+                        RotatingRefreshIconButton(
+                            onClick = { viewModel.refreshBluetooth() },
+                            isRotating = isBluetoothRefreshing,
+                            modifier = Modifier.testTag("home_refresh_bluetooth_button"),
+                            tint = MaterialTheme.colorScheme.primary,
+                            contentDescription = "Refresh Bluetooth HID"
+                        )
+
                         Spacer(modifier = Modifier.width(4.dp))
 
-                        // Connected or Disconnected Status Chip
+                        // Connected or Disconnected Status Chip with live pulsating indicator
                         val isConnected = connectionState is HidConnectionState.Connected
                         Box(
                             modifier = Modifier
+                                .bounceClick()
                                 .clip(RoundedCornerShape(8.dp))
                                 .background(
                                     if (isConnected) StatusGreen.copy(alpha = 0.15f)
@@ -192,13 +211,23 @@ fun HomeScreen(
                                 )
                                 .padding(horizontal = 10.dp, vertical = 6.dp)
                         ) {
-                            Text(
-                                text = if (isConnected) "● BT ONLINE" else "○ BT OFFLINE",
-                                color = if (isConnected) StatusGreen else MaterialTheme.colorScheme.error,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontFamily = FontFamily.Monospace
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isConnected) StatusGreen else MaterialTheme.colorScheme.error)
+                                        .liveDotPulse(if (isConnected) StatusGreen else MaterialTheme.colorScheme.error, enabled = isConnected)
+                                )
+                                Spacer(modifier = Modifier.width(5.dp))
+                                Text(
+                                    text = if (isConnected) "BT ONLINE" else "BT OFFLINE",
+                                    color = if (isConnected) StatusGreen else MaterialTheme.colorScheme.error,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    fontFamily = FontFamily.Monospace
+                                )
+                            }
                         }
                     }
                 }
@@ -277,6 +306,7 @@ fun HomeScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
+                .bounceClick()
                 .clickable { onNavigateToUsb?.invoke() }
                 .testTag("home_usb_typing_shortcut_card"),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -447,32 +477,44 @@ fun HomeScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "⚠️ ${unsupportedChars.size} unsupported character(s) detected",
+                                text = "ℹ️ ${unsupportedChars.size} non-standard character(s) detected (will be skipped during typing without modifying text)",
                                 fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
+                                fontWeight = FontWeight.Normal,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
-                            TextButton(
-                                onClick = { viewModel.cleanCurrentEditorText() }
-                            ) {
-                                Text("AUTO-CLEAN", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            }
                         }
                     }
                 }
 
                 Spacer(modifier = Modifier.height(10.dp))
 
+                var localEditorText by remember { mutableStateOf(editorText) }
+                LaunchedEffect(editorText) {
+                    if (localEditorText != editorText) {
+                        localEditorText = editorText
+                    }
+                }
+
+                val isTypingActive = typingState is TypingState.Typing || typingState is TypingState.Preparing
+
                 OutlinedTextField(
-                    value = editorText,
-                    onValueChange = { viewModel.updateEditorText(it) },
+                    value = localEditorText,
+                    onValueChange = { newText ->
+                        localEditorText = newText
+                        viewModel.updateEditorText(newText)
+                    },
+                    enabled = !isTypingActive,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(
+                        autoCorrectEnabled = false,
+                        keyboardType = androidx.compose.ui.text.input.KeyboardType.Text
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .heightIn(min = 180.dp, max = 280.dp)
                         .testTag("editor_text_input"),
                     placeholder = {
                         Text(
-                            "Type, paste, or load text/code to type into Windows Notepad or any editor...",
+                            "Type, paste, or load text to type into Windows Notepad or any editor...",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                         )
@@ -489,6 +531,55 @@ fun HomeScreen(
                         unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                     )
                 )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Exact Text Preview Card (Guarantees what you see is what is typed)
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .testTag("verified_text_preview"),
+                    shape = RoundedCornerShape(10.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)),
+                    border = CardDefaults.outlinedCardBorder()
+                ) {
+                    Column(modifier = Modifier.padding(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "EXACT TEXT PREVIEW (TO BE TYPED)",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Text(
+                                "${editorText.length} chars (Exact fidelity)",
+                                fontSize = 11.sp,
+                                fontFamily = FontFamily.Monospace,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        if (editorText.isNotEmpty()) {
+                            Text(
+                                text = editorText,
+                                style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface),
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        } else {
+                            Text(
+                                "(No text entered. Type or paste text above.)",
+                                fontSize = 11.sp,
+                                fontStyle = FontStyle.Italic,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
 
                 // Inline Undo notice if text was just cleared
                 if (previousTextForUndo != null) {
@@ -527,6 +618,7 @@ fun HomeScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
+                            .bounceClick()
                             .testTag("save_text_button"),
                         shape = RoundedCornerShape(10.dp),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
@@ -543,6 +635,7 @@ fun HomeScreen(
                         onClick = onNavigateToScripts,
                         modifier = Modifier
                             .weight(1f)
+                            .bounceClick()
                             .testTag("load_text_button"),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(10.dp)
@@ -569,6 +662,7 @@ fun HomeScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
+                            .bounceClick()
                             .testTag("paste_text_button"),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(10.dp)
@@ -587,6 +681,7 @@ fun HomeScreen(
                         },
                         modifier = Modifier
                             .weight(1f)
+                            .bounceClick()
                             .testTag("clear_text_button"),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(10.dp)
@@ -602,6 +697,7 @@ fun HomeScreen(
                         onClick = { viewModel.loadSampleText() },
                         modifier = Modifier
                             .weight(1f)
+                            .bounceClick()
                             .testTag("sample_text_button"),
                         contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 4.dp, vertical = 8.dp),
                         shape = RoundedCornerShape(10.dp)
@@ -868,6 +964,7 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(48.dp)
+                                    .bounceClick()
                                     .testTag("pause_typing_button"),
                                 colors = ButtonDefaults.buttonColors(containerColor = StatusYellow),
                                 shape = RoundedCornerShape(10.dp)
@@ -882,6 +979,7 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(48.dp)
+                                    .bounceClick()
                                     .testTag("stop_typing_button"),
                                 colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
                                 shape = RoundedCornerShape(10.dp)
@@ -897,6 +995,7 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(48.dp)
+                                    .bounceClick()
                                     .testTag("resume_typing_button"),
                                 colors = ButtonDefaults.buttonColors(containerColor = StatusGreen),
                                 shape = RoundedCornerShape(10.dp)
@@ -911,6 +1010,7 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(48.dp)
+                                    .bounceClick()
                                     .testTag("restart_typing_button"),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                                 shape = RoundedCornerShape(10.dp)
@@ -925,6 +1025,7 @@ fun HomeScreen(
                                 modifier = Modifier
                                     .weight(1f)
                                     .height(48.dp)
+                                    .bounceClick()
                                     .testTag("stop_typing_button"),
                                 colors = ButtonDefaults.buttonColors(containerColor = ErrorRed),
                                 shape = RoundedCornerShape(10.dp)
@@ -935,39 +1036,210 @@ fun HomeScreen(
                             }
                         }
                         else -> {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(10.dp)
-                            ) {
-                                Button(
-                                    onClick = { viewModel.startTyping() },
-                                    modifier = Modifier
-                                        .weight(1f)
-                                        .height(50.dp)
-                                        .testTag("start_typing_button"),
-                                    enabled = isApproved,
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = MaterialTheme.colorScheme.primary,
-                                        disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
-                                    ),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Icon(Icons.Default.PlayArrow, contentDescription = "Start")
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("START AUTO-TYPING", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            val isDeviceConnected = connectionState is HidConnectionState.Connected
+                            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                // Step 2: Target Device Selection & Connection Verification
+                                if (!isDeviceConnected) {
+                                    Card(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .testTag("connect_device_step_card"),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(
+                                            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f)
+                                        ),
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                                    ) {
+                                        Column(modifier = Modifier.padding(12.dp)) {
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Icon(
+                                                        Icons.Default.Bluetooth,
+                                                        contentDescription = "Bluetooth",
+                                                        tint = MaterialTheme.colorScheme.primary,
+                                                        modifier = Modifier.size(18.dp)
+                                                    )
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        "STEP 2: CONNECT TARGET DEVICE",
+                                                        fontWeight = FontWeight.Bold,
+                                                        fontSize = 11.sp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                                if (connectionState is HidConnectionState.Connecting) {
+                                                    androidx.compose.material3.CircularProgressIndicator(
+                                                        modifier = Modifier.size(14.dp),
+                                                        strokeWidth = 2.dp
+                                                    )
+                                                }
+                                            }
+                                            Spacer(modifier = Modifier.height(6.dp))
+                                            Text(
+                                                text = when (val conn = connectionState) {
+                                                    is HidConnectionState.Connecting -> "Connecting to ${conn.deviceName ?: "host"}... Waiting for handshake."
+                                                    is HidConnectionState.BluetoothDisabled -> "Bluetooth is turned off. Turn on Bluetooth in settings."
+                                                    is HidConnectionState.PermissionRequired -> "Bluetooth permissions required to connect to laptop."
+                                                    is HidConnectionState.Error -> "Connection issue: ${conn.message}"
+                                                    else -> "Please connect your target device first before starting Auto-Typing."
+                                                },
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            if (pairedDevices.isNotEmpty()) {
+                                                Text("Select Paired Device:", fontSize = 11.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+                                                Spacer(modifier = Modifier.height(4.dp))
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                ) {
+                                                    pairedDevices.take(3).forEach { dev ->
+                                                        val devName = try { dev.name ?: dev.address } catch (_: Exception) { dev.address }
+                                                        Button(
+                                                            onClick = { viewModel.connectDevice(dev) },
+                                                            modifier = Modifier
+                                                                .weight(1f)
+                                                                .height(36.dp)
+                                                                .bounceClick(),
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                                        ) {
+                                                            Text(
+                                                                text = devName,
+                                                                fontSize = 11.sp,
+                                                                fontWeight = FontWeight.Bold,
+                                                                maxLines = 1,
+                                                                overflow = TextOverflow.Ellipsis
+                                                            )
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                Button(
+                                                    onClick = {
+                                                        onRequestPermissions?.invoke()
+                                                        onNavigateToBluetooth()
+                                                    },
+                                                    modifier = Modifier
+                                                        .fillMaxWidth()
+                                                        .height(38.dp)
+                                                        .bounceClick()
+                                                        .testTag("pair_and_connect_button"),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                                ) {
+                                                    Icon(Icons.Default.Bluetooth, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text("PAIR / CONNECT DEVICE IN SETTINGS", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                } else {
+                                    // Verified connection status badge
+                                    val connectedDev = connectionState as HidConnectionState.Connected
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(StatusGreen.copy(alpha = 0.12f))
+                                            .padding(horizontal = 10.dp, vertical = 6.dp),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = StatusGreen, modifier = Modifier.size(16.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text(
+                                                "Target: ${connectedDev.deviceName} (Verified HID Keyboard)",
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = StatusGreen
+                                            )
+                                        }
+                                        TextButton(
+                                            onClick = { viewModel.disconnectDevice() },
+                                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                                        ) {
+                                            Text("Disconnect", fontSize = 11.sp, color = ErrorRed)
+                                        }
+                                    }
                                 }
 
-                                if (typingState is TypingState.Completed || typingState is TypingState.Stopped) {
-                                    FilledTonalButton(
-                                        onClick = { viewModel.restartTyping() },
-                                        modifier = Modifier
-                                            .height(50.dp)
-                                            .testTag("restart_from_beginning_button"),
-                                        shape = RoundedCornerShape(10.dp)
-                                    ) {
-                                        Icon(Icons.Default.RestartAlt, contentDescription = "Restart")
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Text("RESTART", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                ) {
+                                    if (!isDeviceConnected) {
+                                        Button(
+                                            onClick = {
+                                                if (pairedDevices.isNotEmpty()) {
+                                                    viewModel.connectDevice(pairedDevices.first())
+                                                } else {
+                                                    onRequestPermissions?.invoke()
+                                                    onNavigateToBluetooth()
+                                                }
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(50.dp)
+                                                .bounceClick()
+                                                .testTag("start_typing_button"),
+                                            enabled = isApproved,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Icon(Icons.Default.BluetoothDisabled, contentDescription = "Connect First")
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text("CONNECT DEVICE FIRST", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        }
+                                    } else {
+                                        Button(
+                                            onClick = { viewModel.startTyping() },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(50.dp)
+                                                .bounceClick()
+                                                .pulsingGlow(MaterialTheme.colorScheme.primary, enabled = isApproved && editorText.isNotEmpty())
+                                                .testTag("start_typing_button"),
+                                            enabled = isApproved && editorText.isNotEmpty(),
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.primary,
+                                                disabledContainerColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f)
+                                            ),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Icon(Icons.Default.PlayArrow, contentDescription = "Start")
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Text(
+                                                if (editorText.isNotEmpty()) "START AUTO-TYPING (${editorText.length} chars)" else "ENTER TEXT TO TYPE",
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp
+                                            )
+                                        }
+                                    }
+
+                                    if (typingState is TypingState.Completed || typingState is TypingState.Stopped) {
+                                        FilledTonalButton(
+                                            onClick = { viewModel.restartTyping() },
+                                            modifier = Modifier
+                                                .height(50.dp)
+                                                .bounceClick()
+                                                .testTag("restart_from_beginning_button"),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Icon(Icons.Default.RestartAlt, contentDescription = "Restart")
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Text("RESTART", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        }
                                     }
                                 }
                             }
@@ -1084,15 +1356,20 @@ fun ConnectionStatusBanner(
                     OutlinedButton(
                         onClick = onDisconnectClick,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = ErrorRed),
-                        modifier = Modifier.height(36.dp)
+                        modifier = Modifier
+                            .height(36.dp)
+                            .bounceClick()
                     ) {
-                        Text("DISCONNECT", fontSize = 11.sp)
+                        Text("DISCONNECT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }
                 } else {
                     Button(
                         onClick = onConnectClick,
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.height(36.dp)
+                        modifier = Modifier
+                            .height(36.dp)
+                            .bounceClick()
+                            .pulsingGlow(MaterialTheme.colorScheme.primary, enabled = true)
                     ) {
                         Text("CONNECT", fontSize = 11.sp, fontWeight = FontWeight.Bold)
                     }

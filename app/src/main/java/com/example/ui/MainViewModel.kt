@@ -99,10 +99,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private val defaultSampleText = "hey folks"
 
-    private val _editorText = MutableStateFlow(defaultSampleText)
+    private val _editorText = MutableStateFlow("")
     val editorText: StateFlow<String> = _editorText.asStateFlow()
 
-    private val _editorTitle = MutableStateFlow("greeting.txt")
+    private val _editorTitle = MutableStateFlow("Untitled.txt")
     val editorTitle: StateFlow<String> = _editorTitle.asStateFlow()
 
     private val _currentScriptId = MutableStateFlow<Long?>(null)
@@ -328,16 +328,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         val text = _editorText.value
-        if (text.isBlank()) {
+        if (text.isEmpty()) {
             _userMessage.value = "There is no text to type. Please enter text first."
             return
         }
+
+        // Prevent duplicate / overlapping runs
+        val currentTypingState = typingEngine.typingState.value
+        if (currentTypingState is TypingState.Typing || currentTypingState is TypingState.Preparing) {
+            return
+        }
+
+        // Never skip connect step - verify genuine connection
         val conn = connectionState.value
-        if (conn !is HidConnectionState.Connected) {
-            _userMessage.value = "No HID keyboard connection. Connect to Windows laptop first."
+        if (conn !is HidConnectionState.Connected || !hidManager.verifyRealConnection()) {
+            _userMessage.value = "Please connect the device first."
             return
         }
         typingEngine.startTyping(text)
+    }
+
+    fun verifyBluetoothConnection(): Boolean {
+        return hidManager.verifyRealConnection()
     }
 
     fun pauseTyping() {
@@ -469,7 +481,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _isBluetoothRefreshing.value = true
             try {
                 hidManager.refresh()
-                kotlinx.coroutines.delay(650L)
+                kotlinx.coroutines.delay(800L)
             } finally {
                 _isBluetoothRefreshing.value = false
             }

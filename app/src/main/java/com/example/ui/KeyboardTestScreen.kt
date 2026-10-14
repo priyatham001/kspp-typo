@@ -156,6 +156,11 @@ fun KeyboardTestScreen(
                         modifier = Modifier
                             .weight(1f)
                             .height(48.dp)
+                            .bounceClick()
+                            .pulsingGlow(
+                                MaterialTheme.colorScheme.primary,
+                                enabled = !isTestingAllKeys && connectionState is HidConnectionState.Connected
+                            )
                             .testTag("test_all_keys_button"),
                         shape = RoundedCornerShape(10.dp),
                         colors = ButtonDefaults.buttonColors(
@@ -180,7 +185,9 @@ fun KeyboardTestScreen(
                     if (isTestingAllKeys) {
                         androidx.compose.material3.OutlinedButton(
                             onClick = { viewModel.cancelTestAllKeys() },
-                            modifier = Modifier.height(48.dp),
+                            modifier = Modifier
+                                .height(48.dp)
+                                .bounceClick(),
                             shape = RoundedCornerShape(10.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = com.example.ui.theme.ErrorRed)
                         ) {
@@ -414,6 +421,7 @@ fun KeyButton(
     Box(
         modifier = Modifier
             .size(width = width, height = 44.dp)
+            .bounceClick()
             .clip(RoundedCornerShape(8.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { onClick() }

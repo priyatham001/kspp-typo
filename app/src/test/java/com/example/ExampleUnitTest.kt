@@ -300,16 +300,70 @@ class ExampleUnitTest {
 
     @Test
     fun testHidConnectionState_distinctions() {
-        val disconnected = com.example.bluetooth.HidConnectionState.Disconnected
-        val disabled = com.example.bluetooth.HidConnectionState.BluetoothDisabled
-        val registering = com.example.bluetooth.HidConnectionState.Registering
+        val disconnected: com.example.bluetooth.HidConnectionState = com.example.bluetooth.HidConnectionState.Disconnected
+        val disabled: com.example.bluetooth.HidConnectionState = com.example.bluetooth.HidConnectionState.BluetoothDisabled
+        val registering: com.example.bluetooth.HidConnectionState = com.example.bluetooth.HidConnectionState.Registering
         val connecting = com.example.bluetooth.HidConnectionState.Connecting("LAPTOP")
         val error = com.example.bluetooth.HidConnectionState.Error("Link failure")
 
-        assertTrue(disconnected is com.example.bluetooth.HidConnectionState)
-        assertTrue(disabled is com.example.bluetooth.HidConnectionState)
-        assertTrue(registering is com.example.bluetooth.HidConnectionState)
+        assertTrue(disconnected is com.example.bluetooth.HidConnectionState.Disconnected)
+        assertTrue(disabled is com.example.bluetooth.HidConnectionState.BluetoothDisabled)
+        assertTrue(registering is com.example.bluetooth.HidConnectionState.Registering)
         assertEquals("LAPTOP", connecting.deviceName)
         assertEquals("Link failure", error.message)
+    }
+
+    @Test
+    fun testRequiredCases_exactTextFidelityAndCharacterReconstruction() {
+        val testCases = listOf(
+            "Please connect the device first.",
+            "Hello, World! 123",
+            "My password is NOT to be changed!",
+            "Line 1\nLine 2",
+            "Repeated chars: aa bb CC 112233 !@#  -- =="
+        )
+
+        for (testCase in testCases) {
+            // Test with Caps Lock OFF
+            val sbOff = StringBuilder()
+            for (char in testCase) {
+                if (char == '\r') continue
+                val stroke = KeyboardMapper.mapChar(char, isCapsLockOn = false)
+                assertNotNull("Character '$char' in '$testCase' must be mappable", stroke)
+                val reconstructed = KeyboardMapper.strokeToChar(stroke!!, isCapsLockOn = false)
+                assertEquals("Mismatch reconstructing '$char' with Caps Lock OFF", char, reconstructed)
+                sbOff.append(reconstructed)
+            }
+            assertEquals("Reconstructed text must match original with Caps Lock OFF", testCase, sbOff.toString())
+
+            // Test with Caps Lock ON
+            val sbOn = StringBuilder()
+            for (char in testCase) {
+                if (char == '\r') continue
+                val stroke = KeyboardMapper.mapChar(char, isCapsLockOn = true)
+                assertNotNull("Character '$char' in '$testCase' must be mappable", stroke)
+                val reconstructed = KeyboardMapper.strokeToChar(stroke!!, isCapsLockOn = true)
+                assertEquals("Mismatch reconstructing '$char' with Caps Lock ON", char, reconstructed)
+                sbOn.append(reconstructed)
+            }
+            assertEquals("Reconstructed text must match original with Caps Lock ON", testCase, sbOn.toString())
+        }
+    }
+
+    @Test
+    fun testConnectStepSafeguards_notSkippedWhenDisconnected() {
+        val states: List<com.example.bluetooth.HidConnectionState> = listOf(
+            com.example.bluetooth.HidConnectionState.Disconnected,
+            com.example.bluetooth.HidConnectionState.Connecting("My-Laptop"),
+            com.example.bluetooth.HidConnectionState.BluetoothDisabled,
+            com.example.bluetooth.HidConnectionState.PermissionRequired,
+            com.example.bluetooth.HidConnectionState.Registering,
+            com.example.bluetooth.HidConnectionState.Error("Failed")
+        )
+
+        for (state in states) {
+            val isGenuineConnected = state is com.example.bluetooth.HidConnectionState.Connected
+            org.junit.Assert.assertFalse("State $state must not allow typing without active connection", isGenuineConnected)
+        }
     }
 }

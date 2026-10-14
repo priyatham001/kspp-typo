@@ -8,13 +8,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlin.math.min
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 sealed class TypingState {
     data object Idle : TypingState()
@@ -35,7 +37,13 @@ sealed class TypingState {
 /**
  * Universal Auto-Typing Engine that streams ANY user-provided plain text character by character
  * via genuine Bluetooth HID keyboard reports.
- * Does not use clipboard, companion apps, or web sockets.
+ *
+ * Guarantees:
+ * - Thread-safe single-runner execution via Mutex (prevents overlapping/interleaved keystrokes).
+ * - Exact text fidelity: preserves case, numbers, symbols, spaces, and line breaks.
+ * - Releases all modifier keys and key codes after every keystroke.
+ * - Safe host Caps Lock synchronization.
+ * - Immediate abort and clean key release if Bluetooth connection drops.
  */
 class TypingEngine(
     private val hidManager: BluetoothHidManager,
@@ -48,6 +56,7 @@ class TypingEngine(
     private val _currentDelayMs = MutableStateFlow(30L)
     val currentDelayMs: StateFlow<Long> = _currentDelayMs.asStateFlow()
 
+    private val typingMutex = Mutex()
     private var typingJob: Job? = null
     private var fullText: String = ""
     private var currentIndex: Int = 0
@@ -59,29 +68,41 @@ class TypingEngine(
     }
 
     /**
-     * Start typing text from index 0 with optional 3-second focus countdown.
+     * Start typing text from index 0.
+     * Prevents overlapping runs and verifies Bluetooth connection.
      */
     fun startTyping(text: String, customDelayMs: Long? = null, withCountdown: Boolean = true) {
         if (text.isEmpty()) {
-            _typingState.value = TypingState.Error("There is no text to type. Please enter or load text first.")
+            _typingState.value = TypingState.Error("There is no text to type. Please enter text first.")
             return
         }
 
+        // Verify genuine Bluetooth HID connection
         val connState = hidManager.connectionState.value
-        if (connState !is HidConnectionState.Connected) {
-            _typingState.value = TypingState.Error("No HID keyboard connection. Connect to your Windows laptop first.")
+        if (connState !is HidConnectionState.Connected || !hidManager.verifyRealConnection()) {
+            _typingState.value = TypingState.Error("Please connect the device first.")
             return
         }
 
         customDelayMs?.let { setDelay(it) }
 
-        stopTyping(resetState = false)
-        fullText = text
-        currentIndex = 0
-        isPaused = false
-        startTimeMs = 0L
+        scope.launch {
+            typingMutex.withLock {
+                // Ensure any previous running job is cancelled and cleanly awaited
+                val existingJob = typingJob
+                if (existingJob != null && existingJob.isActive) {
+                    existingJob.cancelAndJoin()
+                }
+                releaseAllKeys()
 
-        launchTypingLoop(withCountdown = withCountdown)
+                fullText = text
+                currentIndex = 0
+                isPaused = false
+                startTimeMs = 0L
+
+                launchTypingLoopInternal(targetText = text, startIndex = 0, withCountdown = withCountdown)
+            }
+        }
     }
 
     /**
@@ -89,8 +110,12 @@ class TypingEngine(
      */
     fun skipCountdown() {
         if (_typingState.value is TypingState.Preparing) {
-            typingJob?.cancel()
-            launchTypingLoop(withCountdown = false)
+            scope.launch {
+                typingMutex.withLock {
+                    typingJob?.cancelAndJoin()
+                    launchTypingLoopInternal(targetText = fullText, startIndex = currentIndex, withCountdown = false)
+                }
+            }
         }
     }
 
@@ -98,8 +123,9 @@ class TypingEngine(
      * Restart typing the current text from index 0.
      */
     fun restartTyping(customDelayMs: Long? = null, withCountdown: Boolean = true) {
-        if (fullText.isNotEmpty()) {
-            startTyping(fullText, customDelayMs, withCountdown = withCountdown)
+        val textToType = fullText
+        if (textToType.isNotEmpty()) {
+            startTyping(textToType, customDelayMs, withCountdown = withCountdown)
         }
     }
 
@@ -107,15 +133,18 @@ class TypingEngine(
      * Temporarily pause typing. Keeps current position intact and releases active keys.
      */
     fun pauseTyping() {
-        if (_typingState.value is TypingState.Typing || _typingState.value is TypingState.Preparing) {
-            isPaused = true
-            typingJob?.cancel()
-            typingJob = null
-            // Send key up release report immediately
-            hidManager.sendReport(HidReportBuilder.buildKeyUpReport())
-            val total = fullText.length
-            val pct = if (total > 0) (currentIndex.toFloat() / total) * 100f else 0f
-            _typingState.value = TypingState.Paused(currentIndex, total, pct)
+        scope.launch {
+            typingMutex.withLock {
+                if (_typingState.value is TypingState.Typing || _typingState.value is TypingState.Preparing) {
+                    isPaused = true
+                    typingJob?.cancelAndJoin()
+                    typingJob = null
+                    releaseAllKeys()
+                    val total = fullText.length
+                    val pct = if (total > 0) (currentIndex.toFloat() / total) * 100f else 0f
+                    _typingState.value = TypingState.Paused(currentIndex, total, pct)
+                }
+            }
         }
     }
 
@@ -125,31 +154,38 @@ class TypingEngine(
     fun resumeTyping() {
         if (_typingState.value is TypingState.Paused) {
             val connState = hidManager.connectionState.value
-            if (connState !is HidConnectionState.Connected) {
-                _typingState.value = TypingState.Error("Bluetooth connection lost while paused. Reconnect to resume.")
+            if (connState !is HidConnectionState.Connected || !hidManager.verifyRealConnection()) {
+                _typingState.value = TypingState.Error("Bluetooth connection lost while paused. Please connect the device first.")
                 return
             }
-            isPaused = false
-            launchTypingLoop(withCountdown = false)
+            scope.launch {
+                typingMutex.withLock {
+                    isPaused = false
+                    launchTypingLoopInternal(targetText = fullText, startIndex = currentIndex, withCountdown = false)
+                }
+            }
         }
     }
 
     /**
      * Immediately cancel typing operation and reset.
-     * Guaranteed highest priority: terminates jobs and releases all modifiers immediately.
+     * Guaranteed termination: cancels active job and releases all modifiers immediately.
      */
     fun stopTyping(resetState: Boolean = true) {
-        typingJob?.cancel()
-        typingJob = null
-        isPaused = false
+        scope.launch {
+            typingMutex.withLock {
+                val existing = typingJob
+                typingJob = null
+                existing?.cancelAndJoin()
+                isPaused = false
+                releaseAllKeys()
 
-        // Always release any active key press & modifiers
-        hidManager.sendReport(HidReportBuilder.buildKeyUpReport())
-
-        if (resetState) {
-            val total = fullText.length
-            _typingState.value = TypingState.Stopped(currentIndex, total)
-            startTimeMs = 0L
+                if (resetState) {
+                    val total = fullText.length
+                    _typingState.value = TypingState.Stopped(currentIndex, total)
+                    startTimeMs = 0L
+                }
+            }
         }
     }
 
@@ -157,11 +193,19 @@ class TypingEngine(
      * Reset to Idle state.
      */
     fun resetToIdle() {
-        stopTyping(resetState = false)
-        currentIndex = 0
-        fullText = ""
-        startTimeMs = 0L
-        _typingState.value = TypingState.Idle
+        scope.launch {
+            typingMutex.withLock {
+                val existing = typingJob
+                typingJob = null
+                existing?.cancelAndJoin()
+                currentIndex = 0
+                fullText = ""
+                startTimeMs = 0L
+                isPaused = false
+                releaseAllKeys()
+                _typingState.value = TypingState.Idle
+            }
+        }
     }
 
     /**
@@ -178,12 +222,13 @@ class TypingEngine(
      */
     fun sendDirectKey(keyCode: Byte, modifier: Byte = 0) {
         scope.launch {
-            try {
-                hidManager.sendReport(HidReportBuilder.buildKeyDownReport(keyCode, modifier))
-                delay(12)
-                releaseAllKeys()
-            } catch (_: Exception) {
-                releaseAllKeys()
+            typingMutex.withLock {
+                try {
+                    hidManager.sendReport(HidReportBuilder.buildKeyDownReport(keyCode, modifier))
+                    delay(12)
+                } finally {
+                    releaseAllKeys()
+                }
             }
         }
     }
@@ -192,39 +237,50 @@ class TypingEngine(
      * Type an entire raw string directly for testing (e.g. TEST ALL KEYS).
      */
     fun typeDirectString(text: String, onFinished: (() -> Unit)? = null) {
-        typingJob?.cancel()
-        typingJob = scope.launch {
-            try {
-                var prevKey: Byte = -1
-                for (char in text) {
-                    if (!isActive) break
-                    if (char == '\r') continue
-                    val isCapsOn = hidManager.isCapsLockActive.value
-                    val stroke = KeyboardMapper.mapChar(char, isCapsOn) ?: KeyboardMapper.mapChar(' ', isCapsOn)
-                    if (stroke != null) {
-                        // Consecutive identical keys need a small release gap so host doesn't merge them
-                        if (stroke.keyCode == prevKey) {
-                            delay(4)
+        scope.launch {
+            typingMutex.withLock {
+                val existing = typingJob
+                existing?.cancelAndJoin()
+
+                typingJob = scope.launch {
+                    try {
+                        var prevKey: Byte = -1
+                        for (char in text) {
+                            if (!isActive) break
+                            if (char == '\r') continue
+                            val isCapsOn = hidManager.isCapsLockActive.value
+                            val stroke = KeyboardMapper.mapChar(char, isCapsOn) ?: KeyboardMapper.mapChar(' ', isCapsOn)
+                            if (stroke != null) {
+                                if (stroke.keyCode == prevKey) {
+                                    delay(8)
+                                }
+                                hidManager.sendReport(HidReportBuilder.buildKeyDownReport(stroke.keyCode, stroke.modifier))
+                                delay(6)
+                                releaseAllKeys()
+                                delay(10)
+                                prevKey = stroke.keyCode
+                            }
                         }
-                        hidManager.sendReport(HidReportBuilder.buildKeyDownReport(stroke.keyCode, stroke.modifier))
-                        delay(4)
+                    } finally {
                         releaseAllKeys()
-                        delay(8)
-                        prevKey = stroke.keyCode
+                        onFinished?.invoke()
                     }
                 }
-                releaseAllKeys()
-                onFinished?.invoke()
-            } catch (e: CancellationException) {
-                releaseAllKeys()
-            } catch (e: Exception) {
-                releaseAllKeys()
             }
         }
     }
 
-    private fun launchTypingLoop(withCountdown: Boolean = false) {
-        val total = fullText.length
+    /**
+     * Core typing loop. Runs as an isolated coroutine child with local progress tracking.
+     */
+    private fun launchTypingLoopInternal(
+        targetText: String,
+        startIndex: Int,
+        withCountdown: Boolean = false
+    ) {
+        val total = targetText.length
+        currentIndex = startIndex
+
         typingJob = scope.launch {
             try {
                 // 1. Initial Focus Preparation Countdown (3 seconds)
@@ -244,34 +300,34 @@ class TypingEngine(
                 var previousKeyCode: Byte = -1
 
                 while (isActive && currentIndex < total && !isPaused) {
-                    // Check Bluetooth connection status
+                    // Check Bluetooth connection status before every keystroke
                     if (hidManager.connectionState.value !is HidConnectionState.Connected) {
                         releaseAllKeys()
-                        _typingState.value = TypingState.Error("Bluetooth connection lost. Typing stopped.", currentIndex)
+                        _typingState.value = TypingState.Error(
+                            "Bluetooth connection lost at character $currentIndex of $total. Typing stopped.",
+                            currentIndex
+                        )
                         return@launch
                     }
 
-                    val char = fullText[currentIndex]
+                    val char = targetText[currentIndex]
 
-                    // Handle CRLF, LF, CR newlines:
-                    // \r\n -> send exactly ONE ENTER action
-                    // Standalone \r -> send ONE ENTER action
-                    // \n -> send ONE ENTER action
+                    // Handle CRLF (\r\n), standalone \r, and \n:
+                    // \r\n -> map as single ENTER keystroke without duplicating line break
                     val effectiveChar = if (char == '\r') {
-                        if (currentIndex + 1 < total && fullText[currentIndex + 1] == '\n') {
-                            currentIndex++ // advance so \n is processed as the single ENTER
-                            fullText[currentIndex]
+                        if (currentIndex + 1 < total && targetText[currentIndex + 1] == '\n') {
+                            currentIndex++ // skip ahead so \n acts as the single ENTER
+                            targetText[currentIndex]
                         } else {
-                            '\n' // standalone CR maps to ENTER
+                            '\n' // standalone CR acts as ENTER
                         }
                     } else {
                         char
                     }
 
-                    // Map character with safe fallback so auto-typing never aborts mid-stream
+                    // Map character directly preserving exact letter case and host Caps Lock state
                     val isCapsOn = hidManager.isCapsLockActive.value
                     val stroke = KeyboardMapper.mapChar(effectiveChar, isCapsOn)
-                        ?: KeyboardMapper.mapChar(KeyboardMapper.fallbackChar(effectiveChar), isCapsOn)
 
                     if (stroke != null) {
                         val currentDelay = _currentDelayMs.value
@@ -280,44 +336,48 @@ class TypingEngine(
                         // If consecutive identical key (e.g. 'ee', 'll', 'oo', '11'):
                         // Host OS HID driver requires distinct release spacing before next identical press.
                         if (isRepeatKey) {
-                            val repeatGap = if (currentDelay <= 2L) 3L else (currentDelay / 4).coerceIn(3L, 8L)
+                            val repeatGap = (currentDelay / 4).coerceIn(6L, 14L)
                             delay(repeatGap)
                         }
 
-                        // 1. Send Key Down with Modifier
+                        // 1. Send Key Down with exact Modifier (Shift applied only when required)
                         val keyDown = HidReportBuilder.buildKeyDownReport(stroke.keyCode, stroke.modifier)
                         val sentDown = hidManager.sendReport(keyDown)
                         if (!sentDown) {
-                            delay(2)
-                            hidManager.sendReport(keyDown)
+                            // Retry once; if failed, check connection
+                            delay(4)
+                            val retrySent = hidManager.sendReport(keyDown)
+                            if (!retrySent && !hidManager.verifyRealConnection()) {
+                                releaseAllKeys()
+                                _typingState.value = TypingState.Error(
+                                    "Bluetooth transmission failed at character $currentIndex. Host disconnected.",
+                                    currentIndex
+                                )
+                                return@launch
+                            }
                         }
 
-                        // 2. Key hold duration
-                        // At Turbo speeds (<= 2ms), release immediately for maximum throughput
+                        // 2. Key hold duration: ensure host OS registers KeyDown before KeyUp
                         val holdTime = if (currentDelay <= 2L) {
-                            0L
+                            3L
                         } else {
-                            (currentDelay / 4).coerceIn(1L, 6L)
+                            (currentDelay / 3).coerceIn(3L, 12L)
                         }
-                        if (holdTime > 0) {
-                            delay(holdTime)
-                        }
+                        delay(holdTime)
 
-                        // 3. Send Key Up
+                        // 3. Send Key Up (all 8 bytes zeroed, releasing both key code and modifier)
                         val keyUp = HidReportBuilder.buildKeyUpReport()
-                        val sentUp = hidManager.sendReport(keyUp)
-                        if (!sentUp) {
-                            delay(2)
-                            hidManager.sendReport(keyUp)
-                        }
+                        hidManager.sendReport(keyUp)
 
                         previousKeyCode = stroke.keyCode
 
-                        // 4. Inter-key delay
-                        val interKeyDelay = (currentDelay - holdTime).coerceAtLeast(0L)
-                        if (interKeyDelay > 0) {
-                            delay(interKeyDelay)
-                        }
+                        // 4. Inter-key delay (gap before the next character)
+                        val interKeyDelay = (currentDelay - holdTime).coerceAtLeast(3L)
+                        delay(interKeyDelay)
+                    } else {
+                        // Unmapped character (e.g., unsupported emoji or control code)
+                        // Do not modify other text; report or skip gracefully
+                        previousKeyCode = -1
                     }
 
                     currentIndex++
@@ -347,6 +407,8 @@ class TypingEngine(
             } catch (e: Exception) {
                 releaseAllKeys()
                 _typingState.value = TypingState.Error("Unexpected typing error: ${e.message}", currentIndex)
+            } finally {
+                releaseAllKeys()
             }
         }
     }
