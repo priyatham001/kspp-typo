@@ -366,4 +366,58 @@ class ExampleUnitTest {
             org.junit.Assert.assertFalse("State $state must not allow typing without active connection", isGenuineConnected)
         }
     }
+
+    @Test
+    fun testScreenTab_dashboardTabExists() {
+        val tabs = ScreenTab.values()
+        assertTrue(tabs.contains(ScreenTab.DASHBOARD))
+        assertEquals(ScreenTab.DASHBOARD, ScreenTab.values().first())
+    }
+
+    @Test
+    fun testMacroFidelity_zeroCharacterDropAcrossComplexScripts() {
+        val complexMacros = listOf(
+            """public class Main {
+    public static void main(String[] args) {
+        int a = 10;
+        int b = 20;
+        int sum = a + b;
+        System.out.println("Sum = " + sum);
+    }
+}""",
+            """git status
+cd /var/log/app
+npm install --save-dev
+python3 -m unittest discover -s tests -p "*_test.py"
+curl -X POST https://api.example.com/v1/auth -H "Authorization: Bearer token123"
+""",
+            """Special Symbols: !@#$%^&*()_+~`|}{[]:;?><,./-=
+Quotes: 'Single' and "Double" quotes!
+Tabs & Indents:	Column1	Column2	Column3
+Numbers: 0123456789
+Repeated Letters: aabbcceeffgghhiijjkkllmmnnooppqqrrssttuuvvwwxxyyzz
+Repeated Uppercase: AABBCCDDEEFFGGHHIIJJKKLLMMNNOOPPQQRRSSTTUUVVWWXXYYZZ
+Repeated Numbers: 00112233445566778899
+Repeated Symbols: !! @@ ## $$ %% ^^ && ** (( )) -- == ++ __ {{ }} [[ ]] || \\ :: ;; "" '' << >> ?? // .. ,,
+"""
+        )
+
+        for (macro in complexMacros) {
+            val reconstructedBuilder = StringBuilder()
+            var charCount = 0
+            for (char in macro) {
+                if (char == '\r') continue
+                val stroke = KeyboardMapper.mapChar(char, isCapsLockOn = false)
+                assertNotNull("Character '$char' (code: ${char.code}) must map to valid HID KeyStroke", stroke)
+                val reconstructed = KeyboardMapper.strokeToChar(stroke!!, isCapsLockOn = false)
+                assertEquals("Reconstructed character must match original '$char'", char, reconstructed)
+                reconstructedBuilder.append(reconstructed)
+                charCount++
+            }
+            val expectedClean = macro.replace("\r", "")
+            assertEquals("Macro must be reconstructed with 100% exact fidelity without missing a single character", expectedClean, reconstructedBuilder.toString())
+            assertEquals("Character count must match exactly", expectedClean.length, charCount)
+        }
+    }
 }
+

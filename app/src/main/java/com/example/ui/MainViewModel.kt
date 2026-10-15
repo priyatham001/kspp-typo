@@ -461,6 +461,58 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun typeMacro(script: ScriptEntity) {
+        val profile = userProfile.value
+        if (profile == null || !profile.hasActiveAccess) {
+            val msg = if (profile?.isAccessExpired == true) {
+                "8-hour access expired. Waiting for administrator to continue access."
+            } else {
+                "Access not approved. Status: ${profile?.status ?: "Unauthenticated"}"
+            }
+            _userMessage.value = msg
+            return
+        }
+
+        val sc = serviceControl.value
+        if (!sc.isOperational && !profile.isSuperAdmin) {
+            _userMessage.value = if (sc.maintenanceMode) sc.maintenanceMessage else sc.disabledMessage
+            return
+        }
+
+        if (!isUnlocked.value) {
+            _userMessage.value = "Owner passcode authentication required."
+            return
+        }
+
+        if (script.content.isEmpty()) {
+            _userMessage.value = "Macro '${script.title}' is empty."
+            return
+        }
+
+        // Verify Bluetooth connection before starting
+        val conn = connectionState.value
+        if (conn !is HidConnectionState.Connected || !hidManager.verifyRealConnection()) {
+            _userMessage.value = "Please connect the device first."
+            return
+        }
+
+        _editorText.value = script.content
+        _editorTitle.value = script.title
+        _currentScriptId.value = script.id
+        typingEngine.startTyping(script.content)
+    }
+
+    fun seedStarterMacros() {
+        viewModelScope.launch {
+            scriptManager.saveScript("Hello World Greeting", "Hello, World! 123", "text")
+            scriptManager.saveScript("Git Status & Log", "git status\ngit log -n 5\n", "shell")
+            scriptManager.saveScript("Password Test String", "My password is NOT to be changed!", "text")
+            scriptManager.saveScript("Multi-Line Lab Test", "Line 1\nLine 2\nLine 3", "text")
+            scriptManager.saveScript("Special Chars & Symbols", "Repeated chars: aa bb CC 112233 !@#  -- ==", "text")
+            _userMessage.value = "Starter keyboard macros added."
+        }
+    }
+
     fun connectDevice(device: BluetoothDevice) {
         val profile = userProfile.value
         if (profile == null || !profile.isApproved) {

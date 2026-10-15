@@ -72,9 +72,12 @@ import com.example.auth.UserProfile
 import com.example.storage.AppThemeMode
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.outlined.Usb
+import androidx.compose.material.icons.filled.Dashboard
+import androidx.compose.material.icons.outlined.Dashboard
 import com.example.ui.UsbTypingScreen
 import com.example.ui.AccessDeniedReason
 import com.example.ui.AdminDashboardScreen
+import com.example.ui.DashboardScreen
 import com.example.ui.HidInfoScreen
 import com.example.ui.HomeScreen
 import com.example.ui.KeyboardTestScreen
@@ -92,7 +95,7 @@ import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.MyApplicationTheme
 
 enum class ScreenTab {
-    EDITOR, SCRIPTS, USB_TYPING, TEST, HID_INFO, SETTINGS, ADMIN
+    DASHBOARD, EDITOR, SCRIPTS, USB_TYPING, TEST, HID_INFO, SETTINGS, ADMIN
 }
 
 class MainActivity : ComponentActivity() {
@@ -177,11 +180,11 @@ class MainActivity : ComponentActivity() {
             }
 
             MyApplicationTheme(darkTheme = isDark) {
-                var currentTab by remember { mutableStateOf(ScreenTab.EDITOR) }
+                var currentTab by remember { mutableStateOf(ScreenTab.DASHBOARD) }
 
                 LaunchedEffect(currentUser) {
                     if (currentUser == null) {
-                        currentTab = ScreenTab.EDITOR
+                        currentTab = ScreenTab.DASHBOARD
                     }
                 }
 
@@ -321,8 +324,8 @@ class MainActivity : ComponentActivity() {
                         }
                         else -> {
                             // 5. Approved REPLICA Application
-                                BackHandler(enabled = currentTab != ScreenTab.EDITOR) {
-                                    currentTab = ScreenTab.EDITOR
+                                BackHandler(enabled = currentTab != ScreenTab.DASHBOARD) {
+                                    currentTab = ScreenTab.DASHBOARD
                                 }
 
                                 Scaffold(
@@ -413,6 +416,19 @@ class MainActivity : ComponentActivity() {
                                         modifier = Modifier.testTag("bottom_nav_bar")
                                     ) {
                                         NavigationBarItem(
+                                            selected = currentTab == ScreenTab.DASHBOARD,
+                                            onClick = { currentTab = ScreenTab.DASHBOARD },
+                                            icon = {
+                                                Icon(
+                                                    if (currentTab == ScreenTab.DASHBOARD) Icons.Filled.Dashboard else Icons.Outlined.Dashboard,
+                                                    contentDescription = "Dashboard"
+                                                )
+                                            },
+                                            label = { Text("Dashboard") },
+                                            modifier = Modifier.testTag("nav_tab_dashboard")
+                                        )
+
+                                        NavigationBarItem(
                                             selected = currentTab == ScreenTab.EDITOR,
                                             onClick = { currentTab = ScreenTab.EDITOR },
                                             icon = {
@@ -431,10 +447,10 @@ class MainActivity : ComponentActivity() {
                                             icon = {
                                                 Icon(
                                                     if (currentTab == ScreenTab.SCRIPTS) Icons.Filled.Description else Icons.Outlined.Description,
-                                                    contentDescription = "Saved Texts"
+                                                    contentDescription = "Saved Macros"
                                                 )
                                             },
-                                            label = { Text("Texts") },
+                                            label = { Text("Macros") },
                                             modifier = Modifier.testTag("nav_tab_scripts")
                                         )
 
@@ -460,21 +476,8 @@ class MainActivity : ComponentActivity() {
                                                     contentDescription = "Test"
                                                 )
                                             },
-                                            label = { Text("Test") },
+                                            label = { Text("Keys") },
                                             modifier = Modifier.testTag("nav_tab_test")
-                                        )
-
-                                        NavigationBarItem(
-                                            selected = currentTab == ScreenTab.HID_INFO,
-                                            onClick = { currentTab = ScreenTab.HID_INFO },
-                                            icon = {
-                                                Icon(
-                                                    if (currentTab == ScreenTab.HID_INFO) Icons.Filled.Info else Icons.Outlined.Info,
-                                                    contentDescription = "HID Info"
-                                                )
-                                            },
-                                            label = { Text("HID Info") },
-                                            modifier = Modifier.testTag("nav_tab_hid_info")
                                         )
 
                                         NavigationBarItem(
@@ -499,6 +502,12 @@ class MainActivity : ComponentActivity() {
                                         .padding(innerPadding)
                                 ) {
                                     when (currentTab) {
+                                        ScreenTab.DASHBOARD -> DashboardScreen(
+                                            viewModel = viewModel,
+                                            onNavigateToEditor = { currentTab = ScreenTab.EDITOR },
+                                            onNavigateToBluetooth = { currentTab = ScreenTab.HID_INFO },
+                                            onRequestPermissions = requestBluetoothPermissions
+                                        )
                                         ScreenTab.EDITOR -> HomeScreen(
                                             viewModel = viewModel,
                                             onNavigateToScripts = { currentTab = ScreenTab.SCRIPTS },
