@@ -1,0 +1,3 @@
+<resources>
+    <style name="Theme.REPlica" parent="android:Theme.Material.Light.NoActionBar" />
+</resources>

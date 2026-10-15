@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <group
+        android:translateX="22"
+        android:translateY="22">
+        <!-- Modern Keyboard Icon within 64x64 area -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M56,8H8C4.7,8 2,10.7 2,14v36c0,3.3 2.7,6 6,6h48c3.3,0 6,-2.7 6,-6V14C62,10.7 59.3,8 56,8zM56,50H8V14h48V50z"/>
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M14,20h6v6h-6zM24,20h6v6h-6zM34,20h6v6h-6zM44,20h6v6h-6zM14,28h6v6h-6zM24,28h6v6h-6zM34,28h6v6h-6zM44,28h6v6h-6zM16,38h32v6H16z"/>
+    </group>
+</vector>

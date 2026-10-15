@@ -1,0 +1,6 @@
+{
+  "name": "REPlica",
+  "description": "Premium multi-device Bluetooth HID, Wi-Fi, and USB remote typing and keyboard controller",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
