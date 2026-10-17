@@ -17,6 +17,8 @@ import android.os.Build
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.example.keyboard.KeyboardDescriptor
+import com.example.keyboard.KeyboardMapper
+import com.example.keyboard.HidReportBuilder
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -503,6 +505,53 @@ class BluetoothHidManager(private val context: Context) {
             Log.e(tag, "Failed to send HID report", e)
             false
         }
+    }
+
+    /**
+     * Checks if this device's OEM/manufacturer is widely known to disable the standard Bluetooth HID Device profile.
+     */
+    val isOemKnownToDisableHid: Boolean
+        get() {
+            val mfg = Build.MANUFACTURER.lowercase()
+            return mfg.contains("motorola") || mfg.contains("oneplus") || 
+                   mfg.contains("xiaomi") || mfg.contains("redmi") || 
+                   mfg.contains("vivo") || mfg.contains("realme") || 
+                   mfg.contains("oppo") || mfg.contains("nokia")
+        }
+
+    val isAndroidVersionSupported: Boolean
+        get() = Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+
+    val isHidSupportedOnDevice: Boolean
+        get() = _connectionState.value !is HidConnectionState.NotSupported && isAndroidVersionSupported
+
+    /**
+     * Sends a single character to the connected Bluetooth HID host.
+     */
+    fun sendSingleCharacter(char: Char): Boolean {
+        val stroke = KeyboardMapper.mapChar(char) ?: return false
+        val downReport = HidReportBuilder.buildKeyDownReport(stroke.keyCode, stroke.modifier)
+        val upReport = HidReportBuilder.buildKeyUpReport()
+        val success = sendReport(downReport)
+        if (success) {
+            try { Thread.sleep(15) } catch (_: Exception) {}
+            sendReport(upReport)
+        }
+        return success
+    }
+
+    /**
+     * Sends a specific raw HID key code and modifier.
+     */
+    fun sendKeyCode(keyCode: Byte, modifier: Byte = 0): Boolean {
+        val downReport = HidReportBuilder.buildKeyDownReport(keyCode, modifier)
+        val upReport = HidReportBuilder.buildKeyUpReport()
+        val success = sendReport(downReport)
+        if (success) {
+            try { Thread.sleep(15) } catch (_: Exception) {}
+            sendReport(upReport)
+        }
+        return success
     }
 
     @SuppressLint("MissingPermission")

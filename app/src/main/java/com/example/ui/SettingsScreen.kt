@@ -52,6 +52,9 @@ import com.example.ui.theme.StatusYellow
 import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.Logout
+import androidx.compose.material3.FilterChip
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import coil.compose.AsyncImage
 
 @Composable
@@ -544,6 +547,99 @@ fun SettingsScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(vertical = 2.dp)
                     )
+                }
+            }
+        }
+
+        // Connection Mode Preference & Test Keystroke
+        val preferredMode by viewModel.preferredConnectionMode.collectAsState()
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("settings_connection_mode_card"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = CardDefaults.outlinedCardBorder()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = "Connection Transport Preference",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Select your default transport for auto-typing and virtual keyboard. 'Auto' selects Wi-Fi/USB when connected, otherwise Bluetooth HID.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = preferredMode == "AUTO",
+                        onClick = { viewModel.setPreferredConnectionMode("AUTO") },
+                        label = { Text("Auto", fontSize = 11.sp) },
+                        modifier = Modifier.testTag("settings_pref_auto")
+                    )
+                    FilterChip(
+                        selected = preferredMode == "WIFI",
+                        onClick = { viewModel.setPreferredConnectionMode("WIFI") },
+                        label = { Text("Wi-Fi / USB", fontSize = 11.sp) },
+                        modifier = Modifier.testTag("settings_pref_wifi")
+                    )
+                    FilterChip(
+                        selected = preferredMode == "BLUETOOTH",
+                        onClick = { viewModel.setPreferredConnectionMode("BLUETOOTH") },
+                        label = { Text("Bluetooth", fontSize = 11.sp) },
+                        modifier = Modifier.testTag("settings_pref_bt")
+                    )
+                }
+
+                // Test Keystroke Button
+                Button(
+                    onClick = { viewModel.testActiveConnection() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                    modifier = Modifier.fillMaxWidth().testTag("settings_test_keystroke_button")
+                ) {
+                    Text("⚡ Test Active Connection (Send 'X')")
+                }
+            }
+        }
+
+        // Windows Companion Server Card
+        val companionInfo by viewModel.companionInfo.collectAsState()
+        val context = LocalContext.current
+        Card(
+            modifier = Modifier.fillMaxWidth().testTag("settings_companion_card"),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(16.dp),
+            border = CardDefaults.outlinedCardBorder()
+        ) {
+            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    text = "Windows Companion Server",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "The unified server '${companionInfo.fileName}' runs on Windows and enables Wi-Fi, USB Tethering, Hotspot, and ADB cable remote typing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Text(
+                    text = "Version: ${companionInfo.version} • Size: ${companionInfo.fileSize / 1024} KB\nSHA-256: ${companionInfo.sha256?.take(16)}...",
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedButton(
+                    onClick = { viewModel.companionManager.shareCompanionFile(context) },
+                    modifier = Modifier.fillMaxWidth().testTag("share_companion_exe_button")
+                ) {
+                    Text("Share / Export replica-companion.exe")
                 }
             }
         }

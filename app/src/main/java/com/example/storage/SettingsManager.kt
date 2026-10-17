@@ -48,6 +48,26 @@ class SettingsManager(context: Context) {
         prefs.edit().putString(KEY_THEME_MODE, mode.name).apply()
     }
 
+    private val _preferredConnectionMode = MutableStateFlow(
+        prefs.getString(KEY_PREFERRED_CONNECTION_MODE, "AUTO") ?: "AUTO"
+    )
+    val preferredConnectionMode: StateFlow<String> = _preferredConnectionMode.asStateFlow()
+
+    private val _lastConnectedServerIp = MutableStateFlow(
+        prefs.getString(KEY_LAST_CONNECTED_IP, "127.0.0.1") ?: "127.0.0.1"
+    )
+    val lastConnectedServerIp: StateFlow<String> = _lastConnectedServerIp.asStateFlow()
+
+    fun setPreferredConnectionMode(mode: String) {
+        _preferredConnectionMode.value = mode
+        prefs.edit().putString(KEY_PREFERRED_CONNECTION_MODE, mode).apply()
+    }
+
+    fun setLastConnectedServerIp(ip: String) {
+        _lastConnectedServerIp.value = ip
+        prefs.edit().putString(KEY_LAST_CONNECTED_IP, ip).apply()
+    }
+
     fun setTutorialCompleted(completed: Boolean) {
         _isTutorialCompleted.value = completed
         prefs.edit().putBoolean(KEY_TUTORIAL_COMPLETED, completed).apply()
@@ -58,5 +78,7 @@ class SettingsManager(context: Context) {
         private const val KEY_DEFAULT_DELAY = "default_delay_ms"
         private const val KEY_THEME_MODE = "theme_mode"
         private const val KEY_TUTORIAL_COMPLETED = "tutorial_completed"
+        private const val KEY_PREFERRED_CONNECTION_MODE = "preferred_connection_mode"
+        private const val KEY_LAST_CONNECTED_IP = "last_connected_ip"
     }
 }

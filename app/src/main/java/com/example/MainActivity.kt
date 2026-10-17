@@ -91,11 +91,16 @@ import com.example.ui.OnboardingGuideDialog
 import com.example.ui.InteractiveShowMeOverlay
 import com.example.ui.ShowMeTarget
 import com.example.ui.TroubleshootingBottomSheet
+import com.example.ui.ConnectivityScreen
+import com.example.ui.VirtualKeyboardMouseScreen
+import com.example.ui.AutoTypingScreen
+import androidx.compose.material.icons.filled.Cable
+import androidx.compose.material.icons.outlined.Cable
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.MyApplicationTheme
 
 enum class ScreenTab {
-    DASHBOARD, EDITOR, SCRIPTS, USB_TYPING, TEST, HID_INFO, SETTINGS, ADMIN
+    DASHBOARD, CONNECTIVITY, KEYBOARD, AUTO_TYPING, EDITOR, SCRIPTS, USB_TYPING, TEST, HID_INFO, SETTINGS, ADMIN
 }
 
 class MainActivity : ComponentActivity() {
@@ -324,8 +329,8 @@ class MainActivity : ComponentActivity() {
                         }
                         else -> {
                             // 5. Approved REPLICA Application
-                                BackHandler(enabled = currentTab != ScreenTab.DASHBOARD) {
-                                    currentTab = ScreenTab.DASHBOARD
+                                BackHandler(enabled = currentTab != ScreenTab.DASHBOARD && currentTab != ScreenTab.CONNECTIVITY) {
+                                    currentTab = ScreenTab.CONNECTIVITY
                                 }
 
                                 Scaffold(
@@ -415,77 +420,59 @@ class MainActivity : ComponentActivity() {
                                         containerColor = MaterialTheme.colorScheme.surface,
                                         modifier = Modifier.testTag("bottom_nav_bar")
                                     ) {
+                                        // 1. Connectivity Tab
+                                        val isConnSelected = currentTab == ScreenTab.CONNECTIVITY || currentTab == ScreenTab.DASHBOARD || currentTab == ScreenTab.HID_INFO || currentTab == ScreenTab.USB_TYPING
                                         NavigationBarItem(
-                                            selected = currentTab == ScreenTab.DASHBOARD,
-                                            onClick = { currentTab = ScreenTab.DASHBOARD },
+                                            selected = isConnSelected,
+                                            onClick = { currentTab = ScreenTab.CONNECTIVITY },
                                             icon = {
                                                 Icon(
-                                                    if (currentTab == ScreenTab.DASHBOARD) Icons.Filled.Dashboard else Icons.Outlined.Dashboard,
-                                                    contentDescription = "Dashboard"
+                                                    if (isConnSelected) Icons.Filled.Cable else Icons.Outlined.Cable,
+                                                    contentDescription = "Connectivity"
                                                 )
                                             },
-                                            label = { Text("Dashboard") },
-                                            modifier = Modifier.testTag("nav_tab_dashboard")
+                                            label = { Text("Connect") },
+                                            modifier = Modifier.testTag("nav_tab_connectivity").testTag("nav_tab_dashboard")
                                         )
 
+                                        // 2. Keyboard & Mouse Tab
+                                        val isKeySelected = currentTab == ScreenTab.KEYBOARD || currentTab == ScreenTab.TEST
                                         NavigationBarItem(
-                                            selected = currentTab == ScreenTab.EDITOR,
-                                            onClick = { currentTab = ScreenTab.EDITOR },
+                                            selected = isKeySelected,
+                                            onClick = { currentTab = ScreenTab.KEYBOARD },
                                             icon = {
                                                 Icon(
-                                                    if (currentTab == ScreenTab.EDITOR) Icons.Filled.TextFields else Icons.Outlined.TextFields,
-                                                    contentDescription = "Editor"
+                                                    if (isKeySelected) Icons.Filled.Keyboard else Icons.Outlined.Keyboard,
+                                                    contentDescription = "Keyboard/Mouse"
                                                 )
                                             },
-                                            label = { Text("Editor") },
-                                            modifier = Modifier.testTag("nav_tab_editor")
+                                            label = { Text("Keyboard") },
+                                            modifier = Modifier.testTag("nav_tab_keyboard").testTag("nav_tab_test")
                                         )
 
+                                        // 3. Auto Typing Tab
+                                        val isAutoTypingSelected = currentTab == ScreenTab.AUTO_TYPING || currentTab == ScreenTab.EDITOR
                                         NavigationBarItem(
-                                            selected = currentTab == ScreenTab.SCRIPTS,
-                                            onClick = { currentTab = ScreenTab.SCRIPTS },
+                                            selected = isAutoTypingSelected,
+                                            onClick = { currentTab = ScreenTab.AUTO_TYPING },
                                             icon = {
                                                 Icon(
-                                                    if (currentTab == ScreenTab.SCRIPTS) Icons.Filled.Description else Icons.Outlined.Description,
-                                                    contentDescription = "Saved Macros"
+                                                    if (isAutoTypingSelected) Icons.Filled.TextFields else Icons.Outlined.TextFields,
+                                                    contentDescription = "Auto Typing"
                                                 )
                                             },
-                                            label = { Text("Macros") },
-                                            modifier = Modifier.testTag("nav_tab_scripts")
+                                            label = { Text("Auto Typing") },
+                                            modifier = Modifier.testTag("nav_tab_auto_typing").testTag("nav_tab_editor")
                                         )
 
+                                        // 4. Settings Tab
+                                        val isSettingsSelected = currentTab == ScreenTab.SETTINGS
                                         NavigationBarItem(
-                                            selected = currentTab == ScreenTab.USB_TYPING,
-                                            onClick = { currentTab = ScreenTab.USB_TYPING },
-                                            icon = {
-                                                Icon(
-                                                    if (currentTab == ScreenTab.USB_TYPING) Icons.Filled.Usb else Icons.Outlined.Usb,
-                                                    contentDescription = "USB Typing"
-                                                )
-                                            },
-                                            label = { Text("USB") },
-                                            modifier = Modifier.testTag("nav_tab_usb")
-                                        )
-
-                                        NavigationBarItem(
-                                            selected = currentTab == ScreenTab.TEST,
-                                            onClick = { currentTab = ScreenTab.TEST },
-                                            icon = {
-                                                Icon(
-                                                    if (currentTab == ScreenTab.TEST) Icons.Filled.Keyboard else Icons.Outlined.Keyboard,
-                                                    contentDescription = "Test"
-                                                )
-                                            },
-                                            label = { Text("Keys") },
-                                            modifier = Modifier.testTag("nav_tab_test")
-                                        )
-
-                                        NavigationBarItem(
-                                            selected = currentTab == ScreenTab.SETTINGS,
+                                            selected = isSettingsSelected,
                                             onClick = { currentTab = ScreenTab.SETTINGS },
                                             icon = {
                                                 Icon(
-                                                    if (currentTab == ScreenTab.SETTINGS) Icons.Filled.Settings else Icons.Outlined.Settings,
+                                                    if (isSettingsSelected) Icons.Filled.Settings else Icons.Outlined.Settings,
                                                     contentDescription = "Settings"
                                                 )
                                             },
@@ -502,31 +489,27 @@ class MainActivity : ComponentActivity() {
                                         .padding(innerPadding)
                                 ) {
                                     when (currentTab) {
-                                        ScreenTab.DASHBOARD -> DashboardScreen(
+                                        ScreenTab.DASHBOARD, ScreenTab.CONNECTIVITY -> ConnectivityScreen(
                                             viewModel = viewModel,
-                                            onNavigateToEditor = { currentTab = ScreenTab.EDITOR },
-                                            onNavigateToBluetooth = { currentTab = ScreenTab.HID_INFO },
-                                            onRequestPermissions = requestBluetoothPermissions
-                                        )
-                                        ScreenTab.EDITOR -> HomeScreen(
-                                            viewModel = viewModel,
-                                            onNavigateToScripts = { currentTab = ScreenTab.SCRIPTS },
-                                            onNavigateToBluetooth = { currentTab = ScreenTab.HID_INFO },
-                                            onRequestPermissions = requestBluetoothPermissions,
-                                            onNavigateToUsb = { currentTab = ScreenTab.USB_TYPING },
-                                            onOpenTutorial = { showTutorial = true },
+                                            onRequestBluetoothPermissions = requestBluetoothPermissions,
                                             onOpenTroubleshooting = { showTroubleshooting = true }
+                                        )
+                                        ScreenTab.KEYBOARD, ScreenTab.TEST -> VirtualKeyboardMouseScreen(
+                                            viewModel = viewModel,
+                                            onNavigateToConnectivity = { currentTab = ScreenTab.CONNECTIVITY }
+                                        )
+                                        ScreenTab.AUTO_TYPING, ScreenTab.EDITOR -> AutoTypingScreen(
+                                            viewModel = viewModel,
+                                            onNavigateToConnectivity = { currentTab = ScreenTab.CONNECTIVITY },
+                                            onNavigateToScripts = { currentTab = ScreenTab.SCRIPTS }
                                         )
                                         ScreenTab.SCRIPTS -> ScriptsScreen(
                                             viewModel = viewModel,
-                                            onScriptLoaded = { currentTab = ScreenTab.EDITOR }
+                                            onScriptLoaded = { currentTab = ScreenTab.AUTO_TYPING }
                                         )
                                         ScreenTab.USB_TYPING -> UsbTypingScreen(
                                             viewModel = viewModel,
                                             onOpenTroubleshooting = { showTroubleshooting = true }
-                                        )
-                                        ScreenTab.TEST -> KeyboardTestScreen(
-                                            viewModel = viewModel
                                         )
                                         ScreenTab.HID_INFO -> HidInfoScreen(
                                             viewModel = viewModel,
@@ -541,7 +524,7 @@ class MainActivity : ComponentActivity() {
                                         ScreenTab.ADMIN -> {
                                             AdminDashboardScreen(
                                                 viewModel = viewModel,
-                                                onBack = { currentTab = ScreenTab.EDITOR }
+                                                onBack = { currentTab = ScreenTab.CONNECTIVITY }
                                             )
                                         }
                                     }

@@ -38,6 +38,24 @@ data class UsbDiagnosticsReport(
         get() = handshakeCompleted && heartbeatVerified && (reverseTunnel8989Reachable || forwardTunnel8990Connected)
 }
 
+enum class NetworkConnectionType {
+    WIFI,
+    USB_TETHER,
+    USB_ADB,
+    HOTSPOT,
+    MANUAL_IP
+}
+
+data class DiscoveredServer(
+    val name: String,
+    val host: String,
+    val port: Int = 8989,
+    val latencyMs: Long = 0L,
+    val connectionType: NetworkConnectionType = NetworkConnectionType.WIFI,
+    val isReachable: Boolean = true,
+    val lastSeenTimestamp: Long = System.currentTimeMillis()
+)
+
 sealed class UsbConnectionState {
     data class Disconnected(
         val reason: String = "PC Companion Not Detected",

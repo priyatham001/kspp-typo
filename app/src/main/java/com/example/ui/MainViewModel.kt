@@ -28,6 +28,10 @@ import com.example.usb.UsbConnectionState
 import com.example.usb.UsbTypingManager
 import com.example.usb.UsbTypingProgress
 import android.net.Uri
+import android.util.Log
+import com.example.keyboard.KeyboardDescriptor
+import com.example.usb.DiscoveredServer
+import com.example.usb.NetworkConnectionType
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -53,6 +57,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val usbConnectionState: StateFlow<UsbConnectionState> = usbTypingManager.connectionState
     val isUsbCableConnected: StateFlow<Boolean> = usbTypingManager.isUsbCableConnected
     val usbTypingProgress: StateFlow<UsbTypingProgress> = usbTypingManager.typingProgress
+    val discoveredServers: StateFlow<List<DiscoveredServer>> = usbTypingManager.discoveredServers
+    val isDiscoveringServers: StateFlow<Boolean> = usbTypingManager.isDiscovering
+    val preferredConnectionMode: StateFlow<String> = settingsManager.preferredConnectionMode
+    val lastConnectedServerIp: StateFlow<String> = settingsManager.lastConnectedServerIp
     val companionInfo: StateFlow<CompanionInfo> = companionManager.getCompanionInfoFlow().stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
@@ -221,6 +229,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
         }
+
+        // 4. Auto-fallback to Wi-Fi/USB discovery if Bluetooth HID is unsupported on this device
+        viewModelScope.launch {
+            hidManager.connectionState.collect { hidState ->
+                if (hidState is HidConnectionState.NotSupported) {
+                    Log.d("MainViewModel", "Bluetooth HID unsupported on this OEM/ROM, auto-scanning Wi-Fi / USB server")
+                    usbTypingManager.startDiscovery()
+                }
+            }
+        }
+
+        // Initialize USB and start discovery
+        usbTypingManager.ensureStarted()
+        usbTypingManager.startDiscovery()
     }
 
     fun signInWithGoogle(context: Context) {
@@ -339,13 +361,57 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        // Never skip connect step - verify genuine connection
-        val conn = connectionState.value
-        if (conn !is HidConnectionState.Connected || !hidManager.verifyRealConnection()) {
-            _userMessage.value = "Please connect the device first."
+        // Multi-transport connection check: either Wi-Fi/USB or Bluetooth HID
+        val isNetSynced = usbConnectionState.value is UsbConnectionState.Synced
+        val isBtConnected = connectionState.value is HidConnectionState.Connected && hidManager.verifyRealConnection()
+
+        if (!isNetSynced && !isBtConnected) {
+            _userMessage.value = "Please connect to PC via Connectivity tab first (Wi-Fi, USB, or Bluetooth)."
             return
         }
-        typingEngine.startTyping(text)
+
+        val pref = preferredConnectionMode.value
+        val useNetwork = when (pref) {
+            "WIFI" -> isNetSynced || !isBtConnected
+            "BLUETOOTH" -> !isBtConnected && isNetSynced
+            else -> isNetSynced // AUTO: prefer Wi-Fi/USB if synced, otherwise Bluetooth
+        }
+
+        if (useNetwork && isNetSynced) {
+            val delay = typingDelayMs.value.toInt()
+            val sent = usbTypingManager.startTyping(text, delay)
+            if (sent) {
+                _userMessage.value = "Typing started via Wi-Fi / USB Companion"
+            } else {
+                _userMessage.value = "Failed to start typing via Companion"
+            }
+        } else if (isBtConnected) {
+            typingEngine.startTyping(text)
+        } else {
+            _userMessage.value = "Please connect the device first."
+        }
+    }
+
+    val isNetworkSynced: Boolean
+        get() = usbConnectionState.value is UsbConnectionState.Synced
+
+    val isBluetoothConnected: Boolean
+        get() = connectionState.value is HidConnectionState.Connected && hidManager.verifyRealConnection()
+
+    val isAnyConnected: Boolean
+        get() = isNetworkSynced || isBluetoothConnected
+
+    fun setPreferredConnectionMode(mode: String) {
+        settingsManager.setPreferredConnectionMode(mode)
+    }
+
+    fun startNetworkDiscovery() {
+        usbTypingManager.startDiscovery()
+    }
+
+    fun connectToNetworkHost(host: String, port: Int = 8989) {
+        settingsManager.setLastConnectedServerIp(host)
+        usbTypingManager.connectToHost(host, port)
     }
 
     fun verifyBluetoothConnection(): Boolean {
@@ -353,6 +419,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun pauseTyping() {
+        if (isNetworkSynced) {
+            usbTypingManager.pauseTyping()
+        }
         typingEngine.pauseTyping()
     }
 
@@ -362,7 +431,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _userMessage.value = "Access not approved or 8-hour period expired."
             return
         }
-        typingEngine.resumeTyping()
+        if (isNetworkSynced) {
+            usbTypingManager.resumeTyping()
+        } else {
+            typingEngine.resumeTyping()
+        }
     }
 
     fun restartTyping() {
@@ -371,7 +444,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _userMessage.value = "Access not approved or 8-hour period expired."
             return
         }
-        typingEngine.restartTyping()
+        startTyping()
     }
 
     fun cleanCurrentEditorText() {
@@ -382,7 +455,89 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopTyping() {
+        if (isNetworkSynced) {
+            usbTypingManager.stopTyping()
+        }
         typingEngine.stopTyping()
+    }
+
+    /**
+     * Sends a single virtual key character through the active transport.
+     */
+    fun sendVirtualKey(char: Char) {
+        val pref = preferredConnectionMode.value
+        if (isNetworkSynced && (pref != "BLUETOOTH" || !isBluetoothConnected)) {
+            usbTypingManager.sendSingleKey(char)
+        } else if (isBluetoothConnected) {
+            hidManager.sendSingleCharacter(char)
+        } else if (isNetworkSynced) {
+            usbTypingManager.sendSingleKey(char)
+        } else {
+            _userMessage.value = "Please connect to PC via Connectivity tab first"
+        }
+    }
+
+    /**
+     * Sends a special key (Enter, Tab, Esc, Backspace, Arrows) through active transport.
+     */
+    fun sendVirtualSpecialKey(keyName: String) {
+        val pref = preferredConnectionMode.value
+        if (isNetworkSynced && (pref != "BLUETOOTH" || !isBluetoothConnected)) {
+            usbTypingManager.sendSpecialKey(keyName)
+        } else if (isBluetoothConnected) {
+            val keyCode = when (keyName.uppercase()) {
+                "ENTER", "RETURN" -> KeyboardDescriptor.KEY_ENTER
+                "TAB" -> KeyboardDescriptor.KEY_TAB
+                "SPACE" -> KeyboardDescriptor.KEY_SPACE
+                "BACKSPACE", "BS" -> KeyboardDescriptor.KEY_BACKSPACE
+                "ESC", "ESCAPE" -> KeyboardDescriptor.KEY_ESC
+                "UP" -> KeyboardDescriptor.KEY_UP
+                "DOWN" -> KeyboardDescriptor.KEY_DOWN
+                "LEFT" -> KeyboardDescriptor.KEY_LEFT
+                "RIGHT" -> KeyboardDescriptor.KEY_RIGHT
+                else -> KeyboardDescriptor.KEY_NONE
+            }
+            if (keyCode != KeyboardDescriptor.KEY_NONE) {
+                hidManager.sendKeyCode(keyCode)
+            }
+        } else if (isNetworkSynced) {
+            usbTypingManager.sendSpecialKey(keyName)
+        } else {
+            _userMessage.value = "Please connect to PC via Connectivity tab first"
+        }
+    }
+
+    /**
+     * Sends mouse movement to companion server over Wi-Fi / USB.
+     */
+    fun sendVirtualMouseMove(dx: Int, dy: Int) {
+        if (isNetworkSynced) {
+            usbTypingManager.sendMouseMove(dx, dy)
+        }
+    }
+
+    /**
+     * Sends mouse click to companion server over Wi-Fi / USB.
+     */
+    fun sendVirtualMouseClick(button: String = "LEFT") {
+        if (isNetworkSynced) {
+            usbTypingManager.sendMouseClick(button)
+        }
+    }
+
+    /**
+     * Tests sending a small keystroke to verify active transport link.
+     */
+    fun testActiveConnection() {
+        if (isNetworkSynced) {
+            usbTypingManager.sendSingleKey('X')
+            _userMessage.value = "Sent test keystroke 'X' via Wi-Fi / USB Companion"
+        } else if (isBluetoothConnected) {
+            hidManager.sendSingleCharacter('X')
+            _userMessage.value = "Sent test keystroke 'X' via Bluetooth HID"
+        } else {
+            _userMessage.value = "No active connection to test. Please connect via Connectivity tab."
+        }
     }
 
     fun clearEditor() {

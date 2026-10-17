@@ -50,6 +50,17 @@ class UsbTypingManager(private val context: Context) {
     private val _lastLatencyMs = MutableStateFlow(0L)
     val lastLatencyMs: StateFlow<Long> = _lastLatencyMs.asStateFlow()
 
+    private val discoveryHelper = NetworkDiscoveryHelper(context)
+    private val _discoveredServers = MutableStateFlow<List<DiscoveredServer>>(emptyList())
+    val discoveredServers: StateFlow<List<DiscoveredServer>> = _discoveredServers.asStateFlow()
+
+    private val _isDiscovering = MutableStateFlow(false)
+    val isDiscovering: StateFlow<Boolean> = _isDiscovering.asStateFlow()
+
+    @Volatile
+    var currentHost: String = "127.0.0.1"
+        private set
+
     @Volatile
     private var activeSocket: Socket? = null
     @Volatile
@@ -74,7 +85,8 @@ class UsbTypingManager(private val context: Context) {
                 val connected = intent.getBooleanExtra("connected", false)
                 _isUsbCableConnected.value = connected
                 Log.d(TAG, "USB State changed: connected=$connected")
-                if (!connected && _connectionState.value is UsbConnectionState.Synced) {
+                // Only disconnect on cable pull if currently connected via local USB ADB tunnel
+                if (!connected && _connectionState.value is UsbConnectionState.Synced && currentHost == "127.0.0.1") {
                     disconnect("USB Cable Disconnected")
                 }
             }
@@ -156,7 +168,7 @@ class UsbTypingManager(private val context: Context) {
                 val current = _connectionState.value
                 if (current !is UsbConnectionState.Synced && current !is UsbConnectionState.Connecting) {
                     try {
-                        checkConnection("127.0.0.1", PC_COMPANION_PORT)
+                        checkConnection(currentHost, PC_COMPANION_PORT)
                     } catch (e: Exception) {
                         Log.d(TAG, "Auto-reconnect attempt: ${e.message}")
                     }
@@ -166,16 +178,50 @@ class UsbTypingManager(private val context: Context) {
     }
 
     /**
+     * Runs network discovery for Wi-Fi, USB Tethering, Hotspot, and ADB tunnels.
+     */
+    fun startDiscovery() {
+        scope.launch(Dispatchers.IO) {
+            _isDiscovering.value = true
+            try {
+                val servers = discoveryHelper.discoverServers()
+                _discoveredServers.value = servers
+                // If not currently synced and discovered servers exist, try connecting to the most preferred one
+                if (_connectionState.value !is UsbConnectionState.Synced && servers.isNotEmpty()) {
+                    val target = servers.firstOrNull { it.connectionType == NetworkConnectionType.USB_ADB }
+                        ?: servers.first()
+                    checkConnection(target.host, target.port)
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Discovery failed: ${e.message}")
+            } finally {
+                _isDiscovering.value = false
+            }
+        }
+    }
+
+    /**
+     * Connect to a specific host on the network or USB.
+     */
+    fun connectToHost(host: String, port: Int = PC_COMPANION_PORT) {
+        currentHost = host
+        scope.launch(Dispatchers.IO) {
+            checkConnection(host, port)
+        }
+    }
+
+    /**
      * Explicit check connection.
      * If already Synced, pings the existing socket instead of reconnecting.
      */
     suspend fun checkConnection(
-        targetHost: String = "127.0.0.1",
+        targetHost: String = currentHost,
         targetPort: Int = PC_COMPANION_PORT
     ): UsbConnectionState = withContext(Dispatchers.IO) {
+        currentHost = targetHost
         ensureStarted()
         val current = _connectionState.value
-        if (current is UsbConnectionState.Synced) {
+        if (current is UsbConnectionState.Synced && current.host == targetHost) {
             val sock = activeSocket
             if (sock != null && !sock.isClosed && sock.isConnected) {
                 val t0 = System.currentTimeMillis()
@@ -207,7 +253,7 @@ class UsbTypingManager(private val context: Context) {
         } catch (e: Exception) {
             Log.d(TAG, "Connection probe to $targetHost:$targetPort failed: ${e.message}")
             val state = UsbConnectionState.Disconnected(
-                "Companion not reached. Ensure replica-companion.exe is running on PC."
+                "Companion not reached. Ensure replica-companion.exe is running on PC ($targetHost:$targetPort)."
             )
             _connectionState.value = state
             return@withContext state
@@ -460,6 +506,69 @@ class UsbTypingManager(private val context: Context) {
 
     fun resetProgressToIdle() {
         _typingProgress.value = UsbTypingProgress.Idle
+    }
+
+    /**
+     * Sends a single character to the PC via the companion socket.
+     */
+    fun sendSingleKey(char: Char): Boolean {
+        if (_connectionState.value !is UsbConnectionState.Synced) return false
+        val cmd = JSONObject().apply {
+            put("type", "CMD_START")
+            put("sessionId", "k_${System.currentTimeMillis()}")
+            put("text", char.toString())
+            put("delayMs", 0)
+        }.toString()
+        return sendRawLine(cmd)
+    }
+
+    /**
+     * Sends a named special key to the PC.
+     */
+    fun sendSpecialKey(keyName: String): Boolean {
+        if (_connectionState.value !is UsbConnectionState.Synced) return false
+        val charToSend = when (keyName.uppercase()) {
+            "ENTER", "RETURN" -> "\n"
+            "TAB" -> "\t"
+            "SPACE" -> " "
+            "BACKSPACE", "BS" -> "\b"
+            "ESCAPE", "ESC" -> "\u001B"
+            else -> return false
+        }
+        val cmd = JSONObject().apply {
+            put("type", "CMD_START")
+            put("sessionId", "sk_${System.currentTimeMillis()}")
+            put("text", charToSend)
+            put("delayMs", 0)
+        }.toString()
+        return sendRawLine(cmd)
+    }
+
+    /**
+     * Sends mouse click command to PC.
+     */
+    fun sendMouseClick(button: String = "LEFT"): Boolean {
+        if (_connectionState.value !is UsbConnectionState.Synced) return false
+        val cmd = JSONObject().apply {
+            put("type", "CMD_MOUSE")
+            put("action", "CLICK")
+            put("button", button.uppercase())
+        }.toString()
+        return sendRawLine(cmd)
+    }
+
+    /**
+     * Sends mouse movement command to PC.
+     */
+    fun sendMouseMove(dx: Int, dy: Int): Boolean {
+        if (_connectionState.value !is UsbConnectionState.Synced) return false
+        val cmd = JSONObject().apply {
+            put("type", "CMD_MOUSE")
+            put("action", "MOVE")
+            put("dx", dx)
+            put("dy", dy)
+        }.toString()
+        return sendRawLine(cmd)
     }
 
     @Synchronized
